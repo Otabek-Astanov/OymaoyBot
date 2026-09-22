@@ -1,0 +1,81 @@
+OymaOy Bot:
+
+1) Bizda 3 ta bot boladi 1 tasi sotish uchun 1 tasi harid qilish uchun yana 1 tasi hisob kitob bot.
+
+2) /start bosganda memberni bormi yoqmi check qilib google sheets dan bor bolsa buttons oynasiga ruxsat beradi.
+
+### Harid botda  ->>> Harid qilish, Telegram kanalga elon berish.
+> Harid qilish:
+1) telefon modelni tanlasa:  iphone, android va boshqa.
+2) masalan iphone bosilsa uni versyalarni chiqsin(13, 14, 15), undan keyin uni turini(pro, max)
+(iphoneni X seriasidan boshlashi kerak)
+modellarni google sheets dan olishi kerak. 
+3) Imeikasini rasmini tashlash, va bu faqat 1 ta rasm.
+3) Xotira tanlash, 5 xil xotira bor bularni default chiqarish kerak GPT dan sorash kerak.
+4) Batareka % ni sorasin. Input.
+5) Rangini sorasin. bu input boladi yani yozadi rangini. 
+6) Imeykasoni sorashi kerak bu 6 code li boladi. bu ham input yoziladi.
+6) Karobkasini bormi yoqmi sorasin, Ha/Yo'q default.
+7) Sotib olish narxini kiritish har doim $ boladi va agarda $ belgini uzi kiritsa 2 ta bolib qolmasligi kerak.
+8) Telefon egasini ismi va telefon raqamini sorasin.
+9) puli naqd yoki qarzga olindimi sorasin.
+
+10) Tasdiqlash sorasin. agar tasdiqlansa Google sheets ga malumotlarni yuklash rasmni drivega saqlash, va telegram sotib oldi guruhga ham rasm bilan tashlash.
+
+11) Elon telegram kanalga joylansinmi deb sorasin: Ha/Yo'q
+12) Ha desa Telefon rasmini sorasin(faqat bitta rasm) va sotuv narxini. 
+
+> Telegram kanalga elon berish:
+1) telefon imekasini sorasin
+2) imeyka topilsa Telefon rasmini sorasin(faqat bitta rasm) va sotuv narxini.
+3) Elon berishda template shablonini va shablon uchun qoshimcha malumotlarni Google sheets dan oladi. 
+
+
+
+### Sotuv bot
+
+1) Telefon Imeykasini kiriting
+2) Telefon topilsa uni malumotlarni korsatsin rostdan shumi deb. ha/yo'q
+3) Sotuv narxini kiritsin.
+4) Mijiz ismini
+5) Mijoz telefon raqami
+6) naqdga sotildimi yoki qarz stildimi sorasin
+6) Qarzga bolsa Dokondan yoki Hamkorlarni ro'yxatini chiqadi va hamkor tanlaydi(hamkorlar ro'yxatini Google sheets dan oladi)
+7) boshlang'ich summa sorsin.
+8) sotuv narxi - boshlang'ich summa = hamkor qarzi 
+9) Sotuvchini KPI soralsin. 5$ yoki 10$ 
+10) Malumotlarni tasdiqlash sorasin. Ha/yo'q
+11) ha boladigan bolsa Sotuv guruhga tashlash kerak, Sheets ga Sotildi deb yozadi, Telegram kanalda ham sotildi deb edit qiladi.
+
+
+### Harajat Bot (Bu botni faqat Hisbchi va Investorlar ishlatadi)
+## Kirim/Chiqim/Balance buttons
+# Chiqim 
+2) Chiqimni bosganda 6 ta knopka chiqdi: Abed, KPI, Remont, Telefon, Rahbaryat, Arenda. 
+
+Bularni bosganda shu stats boyicha summani kiritish soraydi $ da.
+
+KPI bosganda hodimlarini tanlaydi va tanlaganda shu hodimni puli chiqadi.
+
+Remontni bosganda imeyka soralsin, imeykagadagi telefon topilsa tasdiqlansin va remont summasi kiritilsin va shu telefonnni tannarxiga qoshiladi. 
+
+Telefon ni bosganda imeykani kiritadi shu telefon boyicha harid boyicha qarzdorlik korsatishi kerak bor bolsa berilgan summa kiritiladi.
+
+Rahbariat bosganda 2 ta narsa chiqadi Abduqayum va Inevstor, tanlab berilgan summa kiritiladi.
+
+
+# Balance 
+1) Balance bosganda(Hisobchi) Balance dagi pul turgan bolishi kerak. 
+
+
+# Kirim
+1) Hamkorlar, Dokondan, Rahbariat Bottons
+2) hamkorlarni bosganda hamkorlar ro'yxati chiqadi, ularni bittasini tanlaganda hamkor bilan net balance korsatilsin va summa kiritsa shuncha summa kirdi bolib balance + bolib  va hamkorni qarzi kamaysin.
+3) Dokondanni bosilganda imeykasi soralsin, imekyaka boyicha hardi qarz summasi korinadi summa kiritilsa qarz yopiladi. 
+4) Rahbariat bosilganda 2 ta narsa chiqadi Abduqayum va Inevstor chiqadi, tanlab summa kiritilsa balance + boladi.
+
+## Harajat bot -> Rahbariat uchun korinishi
+# Balance faqat bitta button bor.
+1) Balance bosganda hisobchini qolidagi pul korinsin. 
+umumiy kassadaki naqd pul korinsin, 
+
