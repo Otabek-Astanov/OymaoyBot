@@ -18,6 +18,8 @@ from bot_sotuv.keyboards import (
 )
 from services.google_sheets import sheets_service
 from services.telegram_poster import poster_service
+from services.health_check import health_checker
+from aiogram.filters import CommandStart, Command
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -28,10 +30,43 @@ def clean_currency(text: str) -> str:
     return cleaned if cleaned else "0"
 
 
+@router.message(Command("status"))
+@router.message(Command("check"))
+async def cmd_check_status(message: types.Message, bot: Bot):
+    """Admin uchun tizim konfiguratsiyasi diagnostikasini chiqaradi."""
+    user_id = message.from_user.id
+    if config.ADMIN_IDS and user_id not in config.ADMIN_IDS:
+        await message.answer("Ushbu buyruq faqat bot adminlari uchun!")
+        return
+
+    msg = await message.answer("🔍 Diagnostika o'tkazilmoqda...")
+    is_ready, report, _ = await health_checker.run_diagnostics(bot)
+    await msg.edit_text(report)
+
+
 @router.message(CommandStart())
-async def cmd_start(message: types.Message, state: FSMContext):
+async def cmd_start(message: types.Message, state: FSMContext, bot: Bot):
     await state.clear()
     user_id = message.from_user.id
+
+    # 1. Tizim to'liq sozlanganmi tekshirish
+    is_ready, report, _ = await health_checker.run_diagnostics(bot)
+    if not is_ready:
+        if not config.ADMIN_IDS or user_id in config.ADMIN_IDS:
+            await message.answer(
+                f"{report}\n\n"
+                "💡 <i>Iltimos, yuqoridagi ❌ belgilangan konfiguratsiyalarni .env faylida to'ldiring.</i>"
+            )
+        else:
+            await message.answer(
+                "⚠️ <b>Bot hozirda sozlanish bosqichida!</b>\n\n"
+                "Barcha tizim sozlamalari yakunlangach bot to'liq ishga tushadi. "
+                "Iltimos, do'kon ma'muriyatiga murojaat qiling.",
+                reply_markup=types.ReplyKeyboardRemove(),
+            )
+        return
+
+    # 2. Foydalanuvchini tekshirish
     is_active, role, name = sheets_service.check_member(user_id)
 
     if not is_active:
