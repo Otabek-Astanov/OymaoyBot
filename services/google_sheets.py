@@ -118,6 +118,7 @@ class GoogleSheetsService:
             # Ustunlar tartibi: DEFAULT_HEADERS[SHEET_PHONES] (32 ta ustun)
             row = [
                 # 1. Harid ma'lumotlari
+                datetime.now().strftime("%Y-%m-%d %H:%M"),  # Harid sanasi (1-ustun)
                 str(phone_data.get("imei_6", "")),
                 str(phone_data.get("brand", "iPhone")),
                 str(phone_data.get("model", "")),
@@ -128,13 +129,12 @@ class GoogleSheetsService:
                 str(phone_data.get("color", "")),
                 str(phone_data.get("has_box", "Yo'q")),
                 str(buy_price),
-                str(phone_data.get("seller_name", "")),
-                str(phone_data.get("seller_phone", "")),
+                str(phone_data.get("seller_name", "")),       # Telefon egasi
+                str(phone_data.get("seller_phone", "")),      # Telefon egasi telefoni
                 str(phone_data.get("payment_type", "Naqd")),
                 str(phone_data.get("debt_amount", 0)),
                 str(phone_data.get("imei_photo_url", "")),
                 str(phone_data.get("phone_photo_url", "")),
-                datetime.now().strftime("%Y-%m-%d %H:%M"),
                 # 2. Tannarx va Remont
                 "0",  # Remont xarajati
                 str(buy_price),  # Jami tannarx
@@ -158,6 +158,7 @@ class GoogleSheetsService:
             # Mock data test uchun
             if imei_6 == "123456":
                 return {
+                    "Harid sanasi": "2026-09-24 12:00",
                     "IMEI (oxirgi 6)": "123456",
                     "Brend": "iPhone",
                     "Model": "iPhone 13 Pro",
@@ -168,6 +169,8 @@ class GoogleSheetsService:
                     "Rang": "Sierra Blue",
                     "Karobka": "Ha",
                     "Harid narxi ($)": "550",
+                    "Telefon egasi": "Akmal",
+                    "Telefon egasi telefoni": "+998901234567",
                     "Remont xarajati ($)": "0",
                     "Jami tannarx ($)": "550",
                     "Holati": "Sotuvda",
@@ -230,8 +233,8 @@ class GoogleSheetsService:
             "Hamkor nomi": str(sale_data.get("partner_name", "-")),
             "Boshlang'ich to'lov ($)": str(sale_data.get("initial_payment", "0")),
             "Hamkor qarzi ($)": str(sale_data.get("partner_debt", "0")),
-            "Sotuvchi KPI ($)": str(kpi),
-            "Sotuvchi": str(sale_data.get("seller_name", "")),
+            "Xodim KPI ($)": str(kpi),
+            "Do'kon sotuvchisi": str(sale_data.get("seller_name", "")),
             "Sotilgan sana": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "Sof foyda ($)": str(profit),
             "Holati": "Sotildi",

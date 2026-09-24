@@ -49,10 +49,10 @@ DEFAULT_HEADERS = {
     ],
     SHEET_PHONES: [
         # Harid ma'lumotlari
-        "IMEI (oxirgi 6)", "Brend", "Model", "Versiya", "Turi", "Xotira",
-        "Batareya %", "Rang", "Karobka", "Harid narxi ($)", "Sotuvchi ismi",
-        "Sotuvchi telefoni", "Harid to'lov turi", "Harid qarz summasi ($)",
-        "IMEI rasmi", "Telefon rasmi", "Harid sanasi",
+        "Harid sanasi", "IMEI (oxirgi 6)", "Brend", "Model", "Versiya", "Turi", "Xotira",
+        "Batareya %", "Rang", "Karobka", "Harid narxi ($)", "Telefon egasi",
+        "Telefon egasi telefoni", "Harid to'lov turi", "Harid qarz summasi ($)",
+        "IMEI rasmi", "Telefon rasmi",
         # Tannarx va Remont
         "Remont xarajati ($)", "Jami tannarx ($)",
         # Kanal post
@@ -60,7 +60,7 @@ DEFAULT_HEADERS = {
         # Sotuv ma'lumotlari
         "Sotuv narxi ($)", "Xaridor ismi", "Xaridor telefoni",
         "Sotuv to'lov turi", "Hamkor nomi", "Boshlang'ich to'lov ($)",
-        "Hamkor qarzi ($)", "Sotuvchi KPI ($)", "Sotuvchi", "Sotilgan sana",
+        "Hamkor qarzi ($)", "Xodim KPI ($)", "Do'kon sotuvchisi", "Sotilgan sana",
         # Natija va Foyda
         "Sof foyda ($)", "Holati"
     ],
