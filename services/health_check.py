@@ -103,20 +103,18 @@ class SystemHealthChecker:
         else:
             report_lines.append("⚠️ <b>Adminlar:</b> <code>ADMIN_IDS</code> kiritilmagan")
 
-        # Asosiy holat (kamida Google Sheets va kalit bo'lishi shart)
-        # To'liq tayyormi?
-        critical_passed = (
-            creds_exists and sheets_connected and channel_ok and harid_group_ok and sotuv_group_ok
-        )
+        # Asosiy holat: Google Sheets va kalit bo'lsa bot to'liq ishlay oladi
+        critical_passed = creds_exists and sheets_connected
 
         report_lines.append("\n━━━━━━━━━━━━━━━━━━━━")
         if critical_passed:
-            report_lines.append("🎉 <b>XULOSA: Tizim 100% tayyor! Bot to'liq rejimda ishlamoqda.</b>")
+            report_lines.append("🎉 <b>XULOSA: Google Sheets bazasi muvaffaqiyatli ulangan! Bot ishchi holatda.</b>")
+            if not (channel_ok and harid_group_ok and sotuv_group_ok):
+                report_lines.append("<i>💡 Eslatma: Kanal yoki guruh sozlanmagan bo'lsa, ma'lumotlar to'g'ridan-to'g'ri Google Sheets'ga yoziladi.</i>")
         else:
             report_lines.append(
-                "⚠️ <b>XULOSA: Tizim to'liq sozlanmagan!</b>\n"
-                "<i>Yuqoridagi ❌ bilan belgilangan sozlamalarni to'ldirish talab qilinadi. "
-                "Barcha sozlamalar to'ldirilguncha bot ishchi rejimga o'tmaydi.</i>"
+                "⚠️ <b>XULOSA: Google Sheets sozlanmagan!</b>\n"
+                "<i>Iltimos, credentials.json va SPREADSHEET_ID ni to'ldiring.</i>"
             )
 
         full_report = "\n".join(report_lines)

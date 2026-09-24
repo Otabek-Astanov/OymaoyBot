@@ -80,6 +80,10 @@ class GoogleSheetsService:
         try:
             ws = self.spreadsheet.worksheet(config.SHEET_MEMBERS)
             records = ws.get_all_records()
+            if not records:
+                # Agar A'zolar jadvalida hali hech kim yo'q bo'lsa, birinchi kirgan foydalanuvchiga test ruxsati beriladi
+                return True, "Admin", "Admin"
+
             for row in records:
                 row_tg_id = str(row.get("Telegram ID", "")).strip()
                 if row_tg_id == str(telegram_id):
