@@ -165,22 +165,46 @@ async def version_chosen(call: types.CallbackQuery, state: FSMContext):
     await state.update_data(version=version)
     await call.message.delete()
 
-    # Shu versiyaga mos turlarni olish
+    # Shu versiyaga mos turlarni olish (CSV format: masalan "Mini, Oddiy, Pro, Pro Max")
     models = sheets_service.get_models()
     types_list = []
     for m in models:
-        if str(m.get("Versiya", "")).strip() == version:
-            t = str(m.get("Turi", "")).strip()
-            if t and t not in types_list:
-                types_list.append(t)
+        if str(m.get("Versiya", "")).strip().lower() == version.strip().lower():
+            raw_types = str(m.get("Turlari", m.get("Turi", "Oddiy")))
+            for t in raw_types.split(","):
+                t_clean = t.strip()
+                if t_clean and t_clean not in types_list:
+                    types_list.append(t_clean)
 
-    if not types_list:
-        types_list = ["Oddiy", "Pro", "Pro Max", "Plus"]
+    # AGAR TUR BO'LMASA YOKI FAQAT 1 TA BO'LSA — ORTIQCHA TUGMA CHIQARILMAYDI:
+    if len(types_list) <= 1:
+        single_type = types_list[0] if types_list else "Oddiy"
+        if single_type.lower() == "oddiy" or not single_type:
+            full_model = f"iPhone {version}".strip()
+        else:
+            full_model = f"iPhone {version} {single_type}".strip()
 
-    kb_rows = [
-        [InlineKeyboardButton(text=f"{version} {t}", callback_data=f"type:{t}")]
-        for t in types_list
-    ]
+        await state.update_data(type=single_type, model=full_model)
+        await state.set_state(HaridStates.waiting_imei_photo)
+        await call.message.answer(
+            f"✅ Tanlandi: <b>{full_model}</b>\n\n"
+            "📸 Endi telefonning <b>IMEI rasmini</b> yuboring:\n"
+            "<i>(Faqat 1 ta rasm qabul qilinadi)</i>",
+            reply_markup=cancel_kb(),
+        )
+        return
+
+    # Agar turlar 1 tadan ko'p bo'lsa (masalan: Oddiy, Pro, Pro Max):
+    kb_rows = []
+    row = []
+    for t in types_list:
+        btn_text = f"{version}" if t.lower() == "oddiy" else f"{version} {t}"
+        row.append(InlineKeyboardButton(text=btn_text, callback_data=f"type:{t}"))
+        if len(row) == 2:
+            kb_rows.append(row)
+            row = []
+    if row:
+        kb_rows.append(row)
 
     await state.set_state(HaridStates.choosing_type)
     await call.message.answer(
@@ -194,7 +218,13 @@ async def type_chosen(call: types.CallbackQuery, state: FSMContext):
     phone_type = call.data.split(":")[1]
     data = await state.get_data()
     version = data.get("version", "")
-    full_model = f"iPhone {version} {phone_type}".strip()
+
+    # Agar "Oddiy" bo'lsa nomiga "Oddiy" so'zi qo'shilmaydi (masalan: iPhone 13)
+    if phone_type.lower() == "oddiy":
+        full_model = f"iPhone {version}".strip()
+    else:
+        full_model = f"iPhone {version} {phone_type}".strip()
+
     await state.update_data(type=phone_type, model=full_model)
     await call.message.delete()
 

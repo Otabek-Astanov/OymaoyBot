@@ -80,7 +80,7 @@ DEFAULT_HEADERS = {
         "To'langan KPI ($)", "Qoldiq KPI ($)"
     ],
     SHEET_MODELS: [
-        "Brend", "Model", "Versiya", "Turi"
+        "Brend", "Versiya", "Turlari"
     ],
     SHEET_TEMPLATES: [
         "Shablon turi", "Matn"
