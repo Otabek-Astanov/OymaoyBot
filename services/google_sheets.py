@@ -114,8 +114,10 @@ class GoogleSheetsService:
 
         try:
             ws = self.spreadsheet.worksheet(config.SHEET_PHONES)
-            # Ustunlar tartibi: DEFAULT_HEADERS[SHEET_PHONES]
+            buy_price = float(phone_data.get("buy_price", 0))
+            # Ustunlar tartibi: DEFAULT_HEADERS[SHEET_PHONES] (32 ta ustun)
             row = [
+                # 1. Harid ma'lumotlari
                 str(phone_data.get("imei_6", "")),
                 str(phone_data.get("brand", "iPhone")),
                 str(phone_data.get("model", "")),
@@ -125,19 +127,24 @@ class GoogleSheetsService:
                 str(phone_data.get("battery", "")),
                 str(phone_data.get("color", "")),
                 str(phone_data.get("has_box", "Yo'q")),
-                str(phone_data.get("buy_price", 0)),
+                str(buy_price),
                 str(phone_data.get("seller_name", "")),
                 str(phone_data.get("seller_phone", "")),
                 str(phone_data.get("payment_type", "Naqd")),
                 str(phone_data.get("debt_amount", 0)),
                 str(phone_data.get("imei_photo_url", "")),
                 str(phone_data.get("phone_photo_url", "")),
-                str(phone_data.get("sell_price", 0)),
-                str(phone_data.get("repair_cost", 0)),
-                str(phone_data.get("total_cost", phone_data.get("buy_price", 0))),
-                str(phone_data.get("status", "Kutilmoqda")),
-                str(phone_data.get("channel_post_id", "")),
                 datetime.now().strftime("%Y-%m-%d %H:%M"),
+                # 2. Tannarx va Remont
+                "0",  # Remont xarajati
+                str(buy_price),  # Jami tannarx
+                # 3. Kanal
+                "",   # Kanal post ID
+                # 4. Sotuv ma'lumotlari (boshida bo'sh)
+                "", "", "", "", "", "", "", "", "", "",
+                # 5. Natija va Foyda
+                "",   # Sof foyda
+                "Sotuvda",  # Holati
             ]
             ws.append_row(row)
             return True
@@ -163,7 +170,7 @@ class GoogleSheetsService:
                     "Harid narxi ($)": "550",
                     "Remont xarajati ($)": "0",
                     "Jami tannarx ($)": "550",
-                    "Holati": "Kutilmoqda",
+                    "Holati": "Sotuvda",
                     "Kanal post ID": "",
                     "_row_index": 2,
                 }
@@ -188,14 +195,74 @@ class GoogleSheetsService:
         try:
             ws = self.spreadsheet.worksheet(config.SHEET_PHONES)
             headers = ws.row_values(1)
+            current_row = ws.row_values(row_index)
+            # Row uzunligini headers bilan tenglashtirish
+            while len(current_row) < len(headers):
+                current_row.append("")
+
             for key, val in updates.items():
                 if key in headers:
-                    col_index = headers.index(key) + 1
-                    ws.update_cell(row_index, col_index, str(val))
+                    col_idx = headers.index(key)
+                    current_row[col_idx] = str(val)
+
+            # Bitta so'rovda butun qatorni yangilash
+            ws.update(f"A{row_index}:{gspread.utils.rowcol_to_a1(row_index, len(headers))}", [current_row])
             return True
         except Exception as e:
             logger.error(f"update_phone xatosi: {e}")
             return False
+
+    def record_sale(self, row_index: int, sale_data: Dict[str, Any], phone_data: Dict[str, Any]) -> Tuple[bool, float]:
+        """
+        Sotuvni yagona 'Telefonlar' jadvaliga yozadi va sof foydani hisoblaydi.
+        Sof foyda = Sotuv narxi - Jami tannarx - Sotuvchi KPI
+        """
+        sell_price = float(sale_data.get("sell_price", 0))
+        total_cost = float(phone_data.get("Jami tannarx ($)", phone_data.get("Harid narxi ($)", 0)))
+        kpi = float(sale_data.get("seller_kpi", 0))
+        profit = sell_price - total_cost - kpi
+
+        updates = {
+            "Sotuv narxi ($)": str(sell_price),
+            "Xaridor ismi": str(sale_data.get("buyer_name", "")),
+            "Xaridor telefoni": str(sale_data.get("buyer_phone", "")),
+            "Sotuv to'lov turi": str(sale_data.get("payment_type", "Naqd")),
+            "Hamkor nomi": str(sale_data.get("partner_name", "-")),
+            "Boshlang'ich to'lov ($)": str(sale_data.get("initial_payment", "0")),
+            "Hamkor qarzi ($)": str(sale_data.get("partner_debt", "0")),
+            "Sotuvchi KPI ($)": str(kpi),
+            "Sotuvchi": str(sale_data.get("seller_name", "")),
+            "Sotilgan sana": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "Sof foyda ($)": str(profit),
+            "Holati": "Sotildi",
+        }
+
+        success = self.update_phone(row_index, updates)
+
+        # Agar hamkor tanlangan bo'lsa, hamkor qarzini yangilash
+        partner_name = sale_data.get("partner_name")
+        partner_debt = float(sale_data.get("partner_debt", 0))
+        if partner_name and partner_name != "-" and partner_debt > 0:
+            self._add_partner_debt(partner_name, partner_debt)
+
+        return success, profit
+
+    def _add_partner_debt(self, partner_name: str, delta_amount: float) -> None:
+        """Hamkorning qarzini oshirish."""
+        if not self.spreadsheet:
+            return
+        try:
+            ws = self.spreadsheet.worksheet(config.SHEET_PARTNERS)
+            records = ws.get_all_records()
+            for idx, r in enumerate(records, start=2):
+                if str(r.get("Hamkor nomi", "")).strip().lower() == partner_name.strip().lower():
+                    cur_debt = float(r.get("Hozirgi qarzdorlik ($)", 0))
+                    ws.update_cell(idx, 2, str(cur_debt + delta_amount))
+                    return
+            # Agar ro'yxatda bo'lmasa, yangi qo'shish
+            ws.append_row([partner_name, str(delta_amount)])
+        except Exception as e:
+            logger.error(f"_add_partner_debt xatosi: {e}")
 
     def get_models(self) -> List[Dict[str, str]]:
         """Modellar ro'yxatini qaytaradi."""

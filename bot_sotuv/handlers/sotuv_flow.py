@@ -327,17 +327,12 @@ async def confirm_sale_handler(message: types.Message, state: FSMContext, bot: B
     # 1. Sotuv guruhiga xabar yuborish
     await poster_service.post_to_sell_group(bot, data)
 
-    # 2. Google Sheets'da telefonni 'Sotildi' deb belgilash
+    # 2. Google Sheets'dagi 'Telefonlar' jadvalida sotuv va sof foydani yozish
     row_idx = data.get("row_index")
-    imei_6 = data.get("imei_6")
+    phone_data = data.get("phone_data", {})
+    profit = 0.0
     if row_idx:
-        sheets_service.update_phone(
-            row_idx,
-            {
-                "Holati": "Sotildi",
-                "Sotuv narxi ($)": data.get("sell_price"),
-            },
-        )
+        _, profit = sheets_service.record_sale(row_idx, data, phone_data)
 
     # 3. Kanaldagi postni '🔴 SOTILDI ❌' deb edit qilish
     channel_post_id = data.get("channel_post_id")
@@ -347,8 +342,11 @@ async def confirm_sale_handler(message: types.Message, state: FSMContext, bot: B
     await state.clear()
     await message.answer(
         "🎉 <b>Sotuv muvaffaqiyatli rasmiylashtirildi!</b>\n\n"
+        f"• Sotuv narxi: <b>{data.get('sell_price')}$</b>\n"
+        f"• Sotuvchi KPI: <b>{data.get('seller_kpi')}$</b>\n"
+        f"• 💰 <b>Do‘konga sof foyda: +{profit:.1f}$</b>\n\n"
         "• Guruhga hisobot yuborildi ✅\n"
-        "• Google Sheets'da telefon statusi 'Sotildi'ga o'tkazildi ✅\n"
+        "• Google Sheets 'Telefonlar' jadvaliga saqlandi ✅\n"
         "• Telegram kanaldagi e'lon tahrirlandi ✅",
         reply_markup=main_menu_kb(),
     )

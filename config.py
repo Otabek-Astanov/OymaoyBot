@@ -35,7 +35,6 @@ DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "").strip()
 # Google Sheets varaqlari nomlari (To'liq o'zbek tilida)
 SHEET_MEMBERS = "A'zolar"
 SHEET_PHONES = "Telefonlar"
-SHEET_SALES = "Sotuvlar"
 SHEET_EXPENSES = "Chiqimlar"
 SHEET_INCOMES = "Kirimlar"
 SHEET_PARTNERS = "Hamkorlar"
@@ -49,17 +48,21 @@ DEFAULT_HEADERS = {
         "Telegram ID", "F.I.Sh", "Telefon raqami", "Roli", "Holati"
     ],
     SHEET_PHONES: [
+        # Harid ma'lumotlari
         "IMEI (oxirgi 6)", "Brend", "Model", "Versiya", "Turi", "Xotira",
         "Batareya %", "Rang", "Karobka", "Harid narxi ($)", "Sotuvchi ismi",
-        "Sotuvchi telefoni", "To'lov turi", "Qarz summasi ($)", "IMEI rasmi",
-        "Telefon rasmi", "Sotuv narxi ($)", "Remont xarajati ($)",
-        "Jami tannarx ($)", "Holati", "Kanal post ID", "Harid sanasi"
-    ],
-    SHEET_SALES: [
-        "ID", "IMEI (oxirgi 6)", "Sotuv narxi ($)", "Xaridor ismi",
-        "Xaridor telefoni", "To'lov turi", "Hamkor nomi",
-        "Boshlang'ich to'lov ($)", "Hamkor qarzi ($)", "Sotuvchi KPI ($)",
-        "Sotuvchi", "Sotilgan sana"
+        "Sotuvchi telefoni", "Harid to'lov turi", "Harid qarz summasi ($)",
+        "IMEI rasmi", "Telefon rasmi", "Harid sanasi",
+        # Tannarx va Remont
+        "Remont xarajati ($)", "Jami tannarx ($)",
+        # Kanal post
+        "Kanal post ID",
+        # Sotuv ma'lumotlari
+        "Sotuv narxi ($)", "Xaridor ismi", "Xaridor telefoni",
+        "Sotuv to'lov turi", "Hamkor nomi", "Boshlang'ich to'lov ($)",
+        "Hamkor qarzi ($)", "Sotuvchi KPI ($)", "Sotuvchi", "Sotilgan sana",
+        # Natija va Foyda
+        "Sof foyda ($)", "Holati"
     ],
     SHEET_EXPENSES: [
         "ID", "Sana", "Chiqim turi", "Summa ($)", "IMEI", "Xodim ismi",

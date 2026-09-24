@@ -23,8 +23,11 @@ wheels/
 .installed.cfg
 *.egg
 
-# Environment variables
+# Environment variables and secrets
 .env
+credentials.json
+*.json
+!.env.example
 
 # Logs
 *.log
