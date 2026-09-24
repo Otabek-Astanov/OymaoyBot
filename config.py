@@ -49,7 +49,7 @@ DEFAULT_HEADERS = {
     ],
     SHEET_PHONES: [
         # Harid ma'lumotlari
-        "Harid sanasi", "IMEI (oxirgi 6)", "Brend", "Model", "Versiya", "Turi", "Xotira",
+        "Harid sanasi", "IMEI", "Brend", "Model", "Versiya", "Turi", "Xotira",
         "Batareya %", "Rang", "Karobka", "Harid narxi ($)", "Telefon egasi",
         "Telefon egasi telefoni", "Harid to'lov turi", "Harid qarz summasi ($)",
         "IMEI rasmi", "Telefon rasmi",

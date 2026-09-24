@@ -183,7 +183,8 @@ class GoogleSheetsService:
             ws = self.spreadsheet.worksheet(config.SHEET_PHONES)
             records = ws.get_all_records()
             for idx, row in enumerate(records, start=2):
-                if str(row.get("IMEI (oxirgi 6)", "")).strip() == str(imei_6).strip():
+                row_imei = str(row.get("IMEI", row.get("IMEI (oxirgi 6)", ""))).strip()
+                if row_imei == str(imei_6).strip():
                     row["_row_index"] = idx
                     return row
             return None
