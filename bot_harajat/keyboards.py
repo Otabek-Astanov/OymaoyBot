@@ -100,7 +100,7 @@ def partners_inline_kb(partners: List[Dict[str, Any]], prefix: str = "partner_in
     for p in partners:
         name = p.get("Hamkor nomi", "").strip()
         debt = p.get("Hozirgi qarzdorlik ($)", "0")
-        if name:
+        if name and name.lower() not in ["dokondan", "do'kondan"]:
             kb.append([InlineKeyboardButton(text=f"🤝 {name} ({format_money_label(debt)})", callback_data=f"{prefix}:{name}")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 

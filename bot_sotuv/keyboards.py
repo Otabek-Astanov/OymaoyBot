@@ -51,7 +51,7 @@ def partners_kb(partners: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
     ]
     for p in partners:
         p_name = p.get("Hamkor nomi", "").strip()
-        if p_name:
+        if p_name and p_name.lower() not in ["dokondan", "do'kondan"]:
             kb.append([InlineKeyboardButton(text=f"🤝 {p_name}", callback_data=f"partner:{p_name}")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
