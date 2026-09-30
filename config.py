@@ -33,25 +33,26 @@ SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "").strip()
 DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "").strip()
 
 # Google Sheets varaqlari nomlari (To'liq o'zbek tilida)
-SHEET_MEMBERS = "A'zolar"
+SHEET_STAFF = "Xodimlar"
+SHEET_MEMBERS = SHEET_STAFF  # A'zolar va Xodimlar yagona jadvalga birlashtirildi
 SHEET_PHONES = "Telefonlar"
 SHEET_EXPENSES = "Chiqimlar"
 SHEET_INCOMES = "Kirimlar"
 SHEET_PARTNERS = "Hamkorlar"
-SHEET_STAFF = "Xodimlar"
 SHEET_MODELS = "Modellar"
 SHEET_TEMPLATES = "Shablonlar"
 
 # Barcha kerakli varaqlar va ularning sarlavhalari (Headers)
 DEFAULT_HEADERS = {
-    SHEET_MEMBERS: [
-        "Telegram ID", "F.I.Sh", "Telefon raqami", "Roli", "Holati"
+    SHEET_STAFF: [
+        "Telegram ID", "F.I.Sh", "Telefon raqami", "Roli", "Holati",
+        "Jami KPI ($)", "To'langan KPI ($)", "Qoldiq KPI ($)"
     ],
     SHEET_PHONES: [
         # Harid ma'lumotlari
-        "Harid sanasi", "IMEI", "Brend", "Model", "Versiya", "Turi", "Xotira",
+        "Harid sanasi", "IMEI", "Brend", "Versiya", "Turi", "Xotira",
         "Batareya %", "Rang", "Karobka", "Harid narxi ($)", "Telefon egasi",
-        "Telefon egasi telefoni", "Harid to'lov turi", "Harid qarz summasi ($)",
+        "Telefon egasi telefoni", "Qabul qilgan xodim", "Harid to'lov turi", "Harid qarz summasi ($)",
         "IMEI rasmi", "Telefon rasmi",
         # Tannarx va Remont
         "Remont xarajati ($)", "Jami tannarx ($)",
@@ -74,10 +75,6 @@ DEFAULT_HEADERS = {
     ],
     SHEET_PARTNERS: [
         "Hamkor nomi", "Hozirgi qarzdorlik ($)"
-    ],
-    SHEET_STAFF: [
-        "Xodim ismi", "Telegram ID", "Jami ishlangan KPI ($)",
-        "To'langan KPI ($)", "Qoldiq KPI ($)"
     ],
     SHEET_MODELS: [
         "Brend", "Versiya", "Turlari"

@@ -5,11 +5,15 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 try:
-    from google.oauth2.service_account import Credentials
+    from google.oauth2.service_account import Credentials as ServiceAccountCredentials
+    from google.oauth2.credentials import Credentials as UserCredentials
+    from google.auth.transport.requests import Request
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaFileUpload
 except ImportError:
-    Credentials = None
+    ServiceAccountCredentials = None
+    UserCredentials = None
+    Request = None
     build = None
     MediaFileUpload = None
 
@@ -26,22 +30,36 @@ SCOPES = [
 class GoogleDriveService:
     def __init__(self):
         self.service = None
-        self.local_media_dir = config.BASE_DIR / "media"
-        self.local_media_dir.mkdir(exist_ok=True)
+        self.token_file = config.BASE_DIR / "token.json"
         self._init_service()
 
     def _init_service(self):
-        if not Credentials or not build:
+        if not build:
             logger.warning("googleapiclient o'rnatilmagan.")
             return
 
         try:
-            if os.path.exists(config.GOOGLE_SERVICE_ACCOUNT_FILE):
-                creds = Credentials.from_service_account_file(
+            # 1. Avval User OAuth (token.json) tekshiriladi (agar foydalanuvchi ruxsat bergan bo'lsa)
+            if self.token_file.exists() and UserCredentials:
+                creds = UserCredentials.from_authorized_user_file(str(self.token_file), SCOPES)
+                if creds and creds.expired and creds.refresh_token and Request:
+                    try:
+                        creds.refresh(Request())
+                        with open(self.token_file, "w") as tf:
+                            tf.write(creds.to_json())
+                    except Exception as re:
+                        logger.warning(f"OAuth token yangilashda xato: {re}")
+                self.service = build("drive", "v3", credentials=creds)
+                logger.info("Google Drive xizmati User OAuth orqali muvaffaqiyatli ulandi.")
+                return
+
+            # 2. Aks holda Service Account orqali ulanish
+            if os.path.exists(config.GOOGLE_SERVICE_ACCOUNT_FILE) and ServiceAccountCredentials:
+                creds = ServiceAccountCredentials.from_service_account_file(
                     config.GOOGLE_SERVICE_ACCOUNT_FILE, scopes=SCOPES
                 )
                 self.service = build("drive", "v3", credentials=creds)
-                logger.info("Google Drive xizmati muvaffaqiyatli ulandi.")
+                logger.info("Google Drive xizmati Service Account orqali ulandi.")
             else:
                 logger.warning(f"Google Drive: {config.GOOGLE_SERVICE_ACCOUNT_FILE} topilmadi.")
         except Exception as e:
@@ -52,28 +70,32 @@ class GoogleDriveService:
 
     def upload_photo(self, local_path: str, file_name: str) -> Tuple[str, str, str]:
         """
-        Rasmni yuklaydi.
+        Rasmni Google Drive'ga yuklaydi.
+        Agar Google Drive ulanmagan yoki DRIVE_FOLDER_ID bo'lmasa, lokalda saqlanmaydi va bo'sh qiymat qaytaradi.
         Qaytaradi: (web_view_link, direct_image_link, sheet_formula)
         """
-        # Agar Google Drive ulanmagan bo'lsa, lokal nusxa saqlanadi
-        dest_path = self.local_media_dir / file_name
-        shutil.copy2(local_path, dest_path)
+        if not self.service or not config.DRIVE_FOLDER_ID:
+            logger.info("Google Drive sozlanmagan, rasm yuklanmadi.")
+            return "", "", ""
 
-        if not self.service:
-            logger.info(f"Drive ulanmagan: rasm lokal saqlandi: {dest_path}")
-            fake_url = f"https://drive.google.com/open?id=local_{file_name}"
-            formula = f'=HYPERLINK("{fake_url}", "📷 {file_name}")'
-            return fake_url, fake_url, formula
+        if not local_path or not os.path.exists(local_path):
+            logger.warning(f"Yuklash uchun rasm fayli topilmadi: {local_path}")
+            return "", "", ""
 
         try:
             file_metadata = {
                 "name": file_name,
-                "parents": [config.DRIVE_FOLDER_ID] if config.DRIVE_FOLDER_ID else [],
+                "parents": [config.DRIVE_FOLDER_ID],
             }
             media = MediaFileUpload(local_path, mimetype="image/jpeg", resumable=True)
             file = (
                 self.service.files()
-                .create(body=file_metadata, media_body=media, fields="id, webViewLink, webContentLink")
+                .create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields="id, webViewLink, webContentLink",
+                    supportsAllDrives=True,
+                )
                 .execute()
             )
             file_id = file.get("id")
@@ -83,22 +105,21 @@ class GoogleDriveService:
                 self.service.permissions().create(
                     fileId=file_id,
                     body={"type": "anyone", "role": "reader"},
+                    supportsAllDrives=True,
                 ).execute()
             except Exception as pe:
                 logger.warning(f"Ruxsat berishda ogohlantirish: {pe}")
 
             view_link = file.get("webViewLink", f"https://drive.google.com/file/d/{file_id}/view")
-            # Google Sheets IMAGE() formulasi uchun to'g'ridan-to'g'ri link
             direct_image_link = f"https://drive.google.com/uc?export=view&id={file_id}"
             
-            # Google Sheets katagi uchun formula (ko'rinadi va ustiga bosganda katta hajmda ochiladi)
-            sheet_formula = f'=HYPERLINK("{view_link}", IMAGE("{direct_image_link}"))'
+            # Google Sheets katagi uchun formula: bosilganda Drive'da ochiladigan havola
+            sheet_formula = f'=HYPERLINK("{view_link}", "📷 {file_name}")'
             return view_link, direct_image_link, sheet_formula
 
         except Exception as e:
             logger.error(f"Google Drive'ga rasm yuklashda xatolik: {e}")
-            fake_url = f"https://drive.google.com/open?id=error_{file_name}"
-            return fake_url, fake_url, f'=HYPERLINK("{fake_url}", "📷 {file_name}")'
+            return "", "", ""
 
 
 # Singleton instansiya

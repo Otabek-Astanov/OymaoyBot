@@ -46,21 +46,26 @@ class SystemHealthChecker:
         if drive_connected:
             report_lines.append("✅ <b>Google Drive:</b> Rasmlar ombori faol")
         else:
-            report_lines.append("❌ <b>Google Drive:</b> Ulanmagan (rasmlar lokal saqlanadi)")
+            report_lines.append("❌ <b>Google Drive:</b> Ulanmagan (rasmlar saqlanmaydi)")
 
         # 4. Telegram Kanal
         channel_set = bool(config.CHANNEL_ID)
         channel_ok = False
         if channel_set:
             try:
-                chat = await bot.get_chat(config.CHANNEL_ID)
-                # Bot adminmi tekshirish
-                bot_member = await bot.get_chat_member(config.CHANNEL_ID, bot.id)
+                # Agar joriy bot harajat boti bo'lsa va kanalda bo'lmasa, harid yoki sotuv boti orqali tekshiramiz
+                c_bot = bot
+                if bot.token == config.HARAJAT_BOT_TOKEN:
+                    c_bot = Bot(token=config.HARID_BOT_TOKEN)
+                chat = await c_bot.get_chat(config.CHANNEL_ID)
+                bot_member = await c_bot.get_chat_member(config.CHANNEL_ID, c_bot.id)
                 if bot_member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR]:
                     channel_ok = True
                     report_lines.append(f"✅ <b>Telegram Kanal:</b> @{chat.username or chat.title} (Bot admin)")
                 else:
                     report_lines.append(f"⚠️ <b>Telegram Kanal:</b> Bot kanalda admin emas!")
+                if c_bot != bot:
+                    await c_bot.session.close()
             except Exception as e:
                 report_lines.append(f"❌ <b>Telegram Kanal:</b> Ulanishda xato ({e})")
         else:
@@ -72,9 +77,12 @@ class SystemHealthChecker:
         harid_group_ok = False
         if harid_group_set:
             try:
-                chat = await bot.get_chat(config.GROUP_HARID_ID)
+                h_bot = bot if bot.token == config.HARID_BOT_TOKEN else Bot(token=config.HARID_BOT_TOKEN)
+                chat = await h_bot.get_chat(config.GROUP_HARID_ID)
                 harid_group_ok = True
                 report_lines.append(f"✅ <b>Harid guruhi:</b> {chat.title}")
+                if h_bot != bot:
+                    await h_bot.session.close()
             except Exception as e:
                 report_lines.append(f"❌ <b>Harid guruhi:</b> Ulanishda xato ({e})")
         else:
@@ -86,9 +94,12 @@ class SystemHealthChecker:
         sotuv_group_ok = False
         if sotuv_group_set:
             try:
-                chat = await bot.get_chat(config.GROUP_SOTUV_ID)
+                s_bot = bot if bot.token == config.SOTUV_BOT_TOKEN else Bot(token=config.SOTUV_BOT_TOKEN)
+                chat = await s_bot.get_chat(config.GROUP_SOTUV_ID)
                 sotuv_group_ok = True
                 report_lines.append(f"✅ <b>Sotuv guruhi:</b> {chat.title}")
+                if s_bot != bot:
+                    await s_bot.session.close()
             except Exception as e:
                 report_lines.append(f"❌ <b>Sotuv guruhi:</b> Ulanishda xato ({e})")
         else:
@@ -96,12 +107,7 @@ class SystemHealthChecker:
         results["sotuv_group_ok"] = sotuv_group_ok
 
         # 7. Adminlar ro'yxati
-        has_admins = bool(config.ADMIN_IDS)
-        results["has_admins"] = has_admins
-        if has_admins:
-            report_lines.append(f"✅ <b>Adminlar:</b> {len(config.ADMIN_IDS)} ta admin kiritilgan")
-        else:
-            report_lines.append("⚠️ <b>Adminlar:</b> <code>ADMIN_IDS</code> kiritilmagan")
+        results["has_admins"] = bool(config.ADMIN_IDS)
 
         # Asosiy holat: Google Sheets va kalit bo'lsa bot to'liq ishlay oladi
         critical_passed = creds_exists and sheets_connected

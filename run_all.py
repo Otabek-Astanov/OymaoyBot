@@ -25,11 +25,19 @@ async def run_single_bot(token: str, router, bot_name: str):
     dp = Dispatcher()
     dp.include_router(router)
 
-    me = await bot.get_me()
-    logger.info(f"✅ {bot_name} ishga tushdi: @{me.username} (ID: {me.id})")
+    for attempt in range(5):
+        try:
+            me = await bot.get_me()
+            logger.info(f"✅ {bot_name} ishga tushdi: @{me.username} (ID: {me.id})")
+            break
+        except Exception as e:
+            if attempt == 4:
+                raise
+            logger.warning(f"⚠️ {bot_name} ulanishda xatolik: {e}. 2 soniyadan so'ng qayta uriniladi...")
+            await asyncio.sleep(2)
 
     try:
-        await bot.delete_webhook(drop_pending_updates=True)
+        await bot.delete_webhook(drop_pending_updates=False)
         await dp.start_polling(bot)
     finally:
         await bot.session.close()

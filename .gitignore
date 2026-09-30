@@ -33,6 +33,10 @@ credentials.json
 *.log
 logs/
 
+# Media / Uploads
+media/*
+!media/.gitkeep
+
 # IDEs and OS
 .DS_Store
 .idea/
