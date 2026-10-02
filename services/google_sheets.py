@@ -1,6 +1,6 @@
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, List, Dict, Any
 
 try:
@@ -18,6 +18,20 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
+
+
+def get_tashkent_now() -> datetime:
+    """Toshkent vaqti (UTC+5) bo'yicha hozirgi datetime ob'ektini qaytaradi."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("Asia/Tashkent"))
+    except Exception:
+        return datetime.now(timezone(timedelta(hours=5)))
+
+
+def get_now_str() -> str:
+    """Toshkent vaqti formati: YYYY-MM-DD HH:MM"""
+    return get_tashkent_now().strftime("%Y-%m-%d %H:%M")
 
 
 def clean_num(val: Any) -> float | int:
@@ -72,6 +86,18 @@ class GoogleSheetsService:
 
     def is_connected(self) -> bool:
         return self.spreadsheet is not None
+
+    @property
+    def formula_sep(self) -> str:
+        """Spreadsheet lokaliga mos formula ajratuvchisi (';' yoki ',')."""
+        try:
+            if self.spreadsheet:
+                locale = getattr(self.spreadsheet, "locale", "") or ""
+                if locale.lower().startswith("en"):
+                    return ","
+        except Exception:
+            pass
+        return ";"
 
     def ensure_worksheets(self) -> None:
         """Kerakli barcha varaqlarni va ularning sarlavhalarini tekshirib, kerak bo'lsa yaratadi."""
@@ -161,7 +187,8 @@ class GoogleSheetsService:
         try:
             ws = self.spreadsheet.worksheet(config.SHEET_STAFF)
             new_idx = len(ws.get_all_values()) + 1
-            formula = f'=IF(A{new_idx}<>"", F{new_idx}-G{new_idx}, "")'
+            sep = self.formula_sep
+            formula = f'=IF(A{new_idx}<>""{sep} F{new_idx}-G{new_idx}{sep} "")'
             ws.append_row([str(telegram_id), full_name, phone_number, role, "Faol", 0, 0, formula], value_input_option="USER_ENTERED")
             self._staff_cache = None
             return True
@@ -253,7 +280,7 @@ class GoogleSheetsService:
 
         row = [
             # 1. Harid ma'lumotlari
-            datetime.now().strftime("%Y-%m-%d %H:%M"),  # Harid sanasi (1-ustun)
+            get_now_str(),  # Harid sanasi (1-ustun)
             imei,
             str(phone_data.get("brand", "iPhone")),
             str(phone_data.get("version", "")),
@@ -373,7 +400,7 @@ class GoogleSheetsService:
             "Hamkor qarzi ($)": partner_debt,
             "Xodim KPI ($)": kpi,
             "Do'kon sotuvchisi": str(sale_data.get("seller_name", "")),
-            "Sotilgan sana": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "Sotilgan sana": get_now_str(),
             "Sof foyda ($)": profit,
             "Holati": "Sotildi",
         }
@@ -402,11 +429,12 @@ class GoogleSheetsService:
         try:
             ws = self.spreadsheet.worksheet(config.SHEET_PARTNERS)
             records = ws.get_all_records()
+            sep = self.formula_sep
             for idx, r in enumerate(records, start=2):
                 if str(r.get("Hamkor nomi", "")).strip().lower() == partner_name.strip().lower():
                     # Mavjud hamkor uchun formula avtomatik Telefonlar va Kirimlar orqali hisoblanadi.
                     # Agar yacheykada formula o'chib ketgan bo'lsa, formulani tiklaymiz.
-                    formula = f'=IF(A{idx}<>"", SUMIF(Telefonlar!$Y:$Y, A{idx}, Telefonlar!$AA:$AA) - SUMIF(Kirimlar!$E:$E, A{idx}, Kirimlar!$D:$D), "")'
+                    formula = f'=IF(A{idx}<>""{sep} SUMIF(Telefonlar!$Y:$Y{sep} A{idx}{sep} Telefonlar!$AA:$AA) - SUMIF(Kirimlar!$E:$E{sep} A{idx}{sep} Kirimlar!$D:$D){sep} "")'
                     cell_val = ws.cell(idx, 2, value_render_option="FORMULA").value
                     if not str(cell_val).startswith("="):
                         ws.update_cell(idx, 2, formula)
@@ -414,7 +442,7 @@ class GoogleSheetsService:
 
             # Agar ro'yxatda bo'lmasa, yangi hamkor va avtomatik formulani qo'shish
             new_idx = len(records) + 2
-            formula = f'=IF(A{new_idx}<>"", SUMIF(Telefonlar!$Y:$Y, A{new_idx}, Telefonlar!$AA:$AA) - SUMIF(Kirimlar!$E:$E, A{new_idx}, Kirimlar!$D:$D), "")'
+            formula = f'=IF(A{new_idx}<>""{sep} SUMIF(Telefonlar!$Y:$Y{sep} A{new_idx}{sep} Telefonlar!$AA:$AA) - SUMIF(Kirimlar!$E:$E{sep} A{new_idx}{sep} Kirimlar!$D:$D){sep} "")'
             ws.append_row([partner_name, formula], value_input_option="USER_ENTERED")
         except Exception as e:
             logger.error(f"_add_partner_debt xatosi: {e}")
@@ -428,8 +456,8 @@ class GoogleSheetsService:
             clean_amt = clean_num(amount)
             # 1. Kirimlar jadvaliga yozish (bu avtomatik tarzda Hamkorlar jadvalining formulasidagi qarzni kamaytiradi)
             ws_inc = self.spreadsheet.worksheet(config.SHEET_INCOMES)
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-            inc_id = str(int(datetime.now().timestamp()))
+            now_str = get_now_str()
+            inc_id = str(int(get_tashkent_now().timestamp()))
             ws_inc.append_row(
                 [inc_id, now_str, "Hamkor to'lovi", clean_amt, partner_name, "", "Hamkor", creator_name],
                 value_input_option="USER_ENTERED",
@@ -438,9 +466,10 @@ class GoogleSheetsService:
             # 2. Hamkorlar jadvalidagi yacheykada formula borligini tekshirish, bo'lmasa formulani tiklash
             ws_part = self.spreadsheet.worksheet(config.SHEET_PARTNERS)
             records = ws_part.get_all_records()
+            sep = self.formula_sep
             for idx, r in enumerate(records, start=2):
                 if str(r.get("Hamkor nomi", "")).strip().lower() == partner_name.strip().lower():
-                    formula = f'=IF(A{idx}<>"", SUMIF(Telefonlar!$Y:$Y, A{idx}, Telefonlar!$AA:$AA) - SUMIF(Kirimlar!$E:$E, A{idx}, Kirimlar!$D:$D), "")'
+                    formula = f'=IF(A{idx}<>""{sep} SUMIF(Telefonlar!$Y:$Y{sep} A{idx}{sep} Telefonlar!$AA:$AA) - SUMIF(Kirimlar!$E:$E{sep} A{idx}{sep} Kirimlar!$D:$D){sep} "")'
                     cell_val = ws_part.cell(idx, 2, value_render_option="FORMULA").value
                     if not str(cell_val).startswith("="):
                         ws_part.update_cell(idx, 2, formula)
@@ -501,7 +530,8 @@ class GoogleSheetsService:
                     if "Jami KPI ($)" in headers:
                         ws.update_cell(idx, headers.index("Jami KPI ($)") + 1, new_total)
                     if "Qoldiq KPI ($)" in headers:
-                        formula = f'=IF(A{idx}<>"", F{idx}-G{idx}, "")'
+                        sep = self.formula_sep
+                        formula = f'=IF(A{idx}<>""{sep} F{idx}-G{idx}{sep} "")'
                         ws.update_cell(idx, headers.index("Qoldiq KPI ($)") + 1, formula)
                     self._staff_cache = None
                     logger.info(f"Sotuvchi KPI qo'shildi: {row_name} +{clean_amt}$")
@@ -530,14 +560,15 @@ class GoogleSheetsService:
                     if "To'langan KPI ($)" in headers:
                         ws_staff.update_cell(idx, headers.index("To'langan KPI ($)") + 1, new_paid)
                     if "Qoldiq KPI ($)" in headers:
-                        formula = f'=IF(A{idx}<>"", F{idx}-G{idx}, "")'
+                        sep = self.formula_sep
+                        formula = f'=IF(A{idx}<>""{sep} F{idx}-G{idx}{sep} "")'
                         ws_staff.update_cell(idx, headers.index("Qoldiq KPI ($)") + 1, formula)
                     break
 
             # Chiqimlar jadvaliga yozish
             ws_exp = self.spreadsheet.worksheet(config.SHEET_EXPENSES)
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-            exp_id = str(int(datetime.now().timestamp()))
+            now_str = get_now_str()
+            exp_id = str(int(get_tashkent_now().timestamp()))
             ws_exp.append_row(
                 [exp_id, now_str, "KPI", clean_amt, "", staff_name, staff_name, creator_name],
                 value_input_option="USER_ENTERED",
@@ -563,8 +594,8 @@ class GoogleSheetsService:
             return False
         try:
             ws_exp = self.spreadsheet.worksheet(config.SHEET_EXPENSES)
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-            exp_id = str(int(datetime.now().timestamp()))
+            now_str = get_now_str()
+            exp_id = str(int(get_tashkent_now().timestamp()))
             clean_amt = clean_num(amount)
             ws_exp.append_row([
                 exp_id,
@@ -596,8 +627,8 @@ class GoogleSheetsService:
             return False
         try:
             ws_inc = self.spreadsheet.worksheet(config.SHEET_INCOMES)
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-            inc_id = str(int(datetime.now().timestamp()))
+            now_str = get_now_str()
+            inc_id = str(int(get_tashkent_now().timestamp()))
             clean_amt = clean_num(amount)
             ws_inc.append_row([
                 inc_id,

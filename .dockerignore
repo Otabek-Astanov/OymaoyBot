@@ -12,3 +12,5 @@ __pycache__/
 logs/
 media/*
 !media/.gitkeep
+.env
+*.json

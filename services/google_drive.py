@@ -68,6 +68,13 @@ class GoogleDriveService:
     def is_connected(self) -> bool:
         return self.service is not None
 
+    def _get_formula_sep(self) -> str:
+        try:
+            from services.google_sheets import sheets_service
+            return sheets_service.formula_sep
+        except Exception:
+            return ";"
+
     def upload_photo(self, local_path: str, file_name: str) -> Tuple[str, str, str]:
         """
         Rasmni Google Drive'ga yuklaydi.
@@ -112,9 +119,9 @@ class GoogleDriveService:
 
             view_link = file.get("webViewLink", f"https://drive.google.com/file/d/{file_id}/view")
             direct_image_link = f"https://drive.google.com/uc?export=view&id={file_id}"
-            
             # Google Sheets katagi uchun formula: bosilganda Drive'da ochiladigan havola
-            sheet_formula = f'=HYPERLINK("{view_link}", "📷 {file_name}")'
+            sep = self._get_formula_sep()
+            sheet_formula = f'=HYPERLINK("{view_link}"{sep} "📷 {file_name}")'
             return view_link, direct_image_link, sheet_formula
 
         except Exception as e:

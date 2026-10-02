@@ -10,3 +10,4 @@ services:
       - ./token.json:/app/token.json
     environment:
       - PYTHONUNBUFFERED=1
+      - TZ=Asia/Tashkent
