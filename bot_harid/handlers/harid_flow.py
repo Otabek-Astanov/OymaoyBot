@@ -544,6 +544,17 @@ async def imei_6_entered(message: types.Message, state: FSMContext):
         await message.answer("Iltimos, to'g'ri IMEI kodini kiriting:")
         return
 
+    # Tekshiruv: agar bu telefon ayni paytda allaqachon Sotuvda (omborda) bo'lsa
+    existing_phone = sheets_service.get_phone_by_imei(imei)
+    if existing_phone and existing_phone.get("Holati") == "Sotuvda":
+        model = existing_phone.get("Model", "Qurilma")
+        await message.answer(
+            f"⚠️ <b>Diqqat!</b> Ushbu IMEI (<code>{imei}</code>) raqamli <b>{model}</b> hozirda allaqachon <b>Sotuvda</b> mavjud!\n\n"
+            "Iltimos, IMEI raqamini tekshirib qaytadan kiriting:",
+            reply_markup=cancel_kb(),
+        )
+        return
+
     await state.update_data(imei=imei, imei_6=imei)
 
     await state.set_state(HaridStates.waiting_box)

@@ -4,6 +4,7 @@ services:
     container_name: oymaoy_bot
     restart: unless-stopped
     volumes:
+      - .:/app
       - ./media:/app/media
       - ./.env:/app/.env:ro
       - ./credentials.json:/app/credentials.json:ro

@@ -257,11 +257,15 @@ class GoogleSheetsService:
                     turi = row.get("Turi", "")
                     row["Model"] = f"{brand} {version} {turi}".replace("  ", " ").strip()
 
-                imei = str(row.get("IMEI", row.get("IMEI (oxirgi 6)", ""))).strip()
+                imei = str(row.get("IMEI", row.get("IMEI (oxirgi 6)", ""))).strip().lstrip("'")
                 if imei:
-                    cache[imei] = row
-                    if len(imei) > 6:
-                        cache[imei[-6:]] = row
+                    current_status = str(row.get("Holati", "")).strip()
+                    existing = cache.get(imei)
+                    # "Sotuvda" bo'lgan faol telefon har doim "Sotildi" bo'lganidan ustun turadi
+                    if not existing or current_status == "Sotuvda" or existing.get("Holati") != "Sotuvda":
+                        cache[imei] = row
+                        if len(imei) > 6:
+                            cache[imei[-6:]] = row
             self._phones_cache = cache
             self._phones_cache_time = now
             logger.info(f"Telefonlar keshi yangilandi: {len(records)} ta telefon yuklandi.")
@@ -276,12 +280,14 @@ class GoogleSheetsService:
         """
         buy_price = clean_num(phone_data.get("buy_price", 0))
         debt_amount = clean_num(phone_data.get("debt_amount", 0))
-        imei = str(phone_data.get("imei", phone_data.get("imei_6", ""))).strip()
+        imei = str(phone_data.get("imei", phone_data.get("imei_6", ""))).strip().lstrip("'")
+        # 0 bilan boshlansa, Google Sheets son deb 0 ni o'chirib yubormasligi uchun apostrof bilan yoziladi
+        imei_for_sheet = f"'{imei}" if imei.startswith("0") else imei
 
         row = [
             # 1. Harid ma'lumotlari
             get_now_str(),  # Harid sanasi (1-ustun)
-            imei,
+            imei_for_sheet,
             str(phone_data.get("brand", "iPhone")),
             str(phone_data.get("version", "")),
             str(phone_data.get("type", "")),
@@ -326,23 +332,25 @@ class GoogleSheetsService:
 
     def get_phone_by_imei(self, imei_query: str) -> Optional[Dict[str, Any]]:
         """IMEI bo'yicha telefonni 0.0001s tezlikda keshdan qidiradi."""
-        clean_imei = str(imei_query).strip()
+        clean_imei = str(imei_query).strip().lstrip("'")
         if not clean_imei:
             return None
 
+        def _lookup(c: Dict[str, Dict[str, Any]], q: str) -> Optional[Dict[str, Any]]:
+            if q in c:
+                return c[q]
+            if len(q) > 6 and q[-6:] in c:
+                return c[q[-6:]]
+            return None
+
         cache = self._load_phones_cache()
-        phone = cache.get(clean_imei)
-        if not phone and len(clean_imei) > 6:
-            phone = cache.get(clean_imei[-6:])
+        phone = _lookup(cache, clean_imei)
         if phone:
             return phone
 
         # Keshda topilmasa, bazani 1 marta majburiy yangilab qayta tekshiramiz
         cache = self._load_phones_cache(force_refresh=True)
-        phone = cache.get(clean_imei)
-        if not phone and len(clean_imei) > 6:
-            phone = cache.get(clean_imei[-6:])
-        return phone
+        return _lookup(cache, clean_imei)
 
     def update_phone(self, row_index: int, updates: Dict[str, Any]) -> bool:
         """Mavjud telefon qatoridagi ma'lumotlarni yangilash."""
