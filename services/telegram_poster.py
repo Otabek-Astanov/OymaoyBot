@@ -3,6 +3,8 @@ import re
 import logging
 from typing import Optional, Dict, Any
 from aiogram import Bot
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from aiogram.types import FSInputFile
 
 import config
@@ -187,6 +189,7 @@ class TelegramPosterService:
                     chat_id=config.CHANNEL_ID,
                     message_id=channel_post_id,
                     caption=new_caption,
+                    parse_mode=ParseMode.HTML,
                 )
                 return True
             except Exception as ce:
@@ -195,6 +198,7 @@ class TelegramPosterService:
                         chat_id=config.CHANNEL_ID,
                         message_id=channel_post_id,
                         text=new_caption,
+                        parse_mode=ParseMode.HTML,
                     )
                     return True
                 except Exception:
@@ -209,7 +213,10 @@ class TelegramPosterService:
 
         # 2. Agar sotuv boti tahrir qilolmasa, Harid boti orqali urinib ko'rish
         if config.HARID_BOT_TOKEN and config.HARID_BOT_TOKEN != bot.token:
-            temp_bot = Bot(token=config.HARID_BOT_TOKEN)
+            temp_bot = Bot(
+                token=config.HARID_BOT_TOKEN,
+                default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+            )
             try:
                 success2 = await _try_edit(temp_bot)
                 if success2:

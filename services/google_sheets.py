@@ -39,7 +39,7 @@ def clean_num(val: Any) -> float | int:
     if val is None:
         return 0
     try:
-        f = float(str(val).replace("$", "").replace(",", "").strip())
+        f = float(str(val).replace("$", "").replace(",", "").replace("\xa0", "").replace(" ", "").strip())
         return int(f) if f.is_integer() else f
     except (ValueError, TypeError):
         return 0
@@ -783,14 +783,10 @@ class GoogleSheetsService:
                     # Naqd harid chiqimi
                     buy_type = str(r.get("Harid to'lov turi", "")).strip()
                     if buy_type == "Naqd":
-                        bp = str(r.get("Harid narxi ($)", "0")).replace("$", "").replace(",", "").strip()
-                        if bp:
-                            summary["total_expense"] += float(bp)
+                        summary["total_expense"] += clean_num(r.get("Harid narxi ($)", 0))
 
                     # Qoldiq telefon qarzi
-                    debt = str(r.get("Harid qarz summasi ($)", "0")).replace("$", "").replace(",", "").strip()
-                    if debt:
-                        summary["store_phone_debts"] += float(debt)
+                    summary["store_phone_debts"] += clean_num(r.get("Harid qarz summasi ($)", 0))
             except Exception as e:
                 logger.warning(f"Telefonlar o'qishda xato: {e}")
 
@@ -798,9 +794,7 @@ class GoogleSheetsService:
             try:
                 ws_part = self.spreadsheet.worksheet(config.SHEET_PARTNERS)
                 for r in ws_part.get_all_records():
-                    p_debt = str(r.get("Hozirgi qarzdorlik ($)", "0")).replace("$", "").replace(",", "").strip()
-                    if p_debt:
-                        summary["partner_debts"] += float(p_debt)
+                    summary["partner_debts"] += clean_num(r.get("Hozirgi qarzdorlik ($)", 0))
             except Exception as e:
                 logger.warning(f"Hamkorlar o'qishda xato: {e}")
 
