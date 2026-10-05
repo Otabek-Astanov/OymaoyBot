@@ -415,8 +415,14 @@ class GoogleSheetsService:
 
         success = self.update_phone(row_index, updates)
 
-        # Agar sotuvchi KPI bo'lsa, xodim hisobiga KPI qo'shish
-        if kpi > 0:
+        # Agar sotuvchi(lar) KPI bo'lsa, xodim(lar) hisobiga KPI qo'shish
+        sellers = sale_data.get("sellers")
+        if sellers and isinstance(sellers, list):
+            for s in sellers:
+                s_amt = clean_num(s.get("kpi", 0))
+                if s_amt > 0:
+                    self.add_seller_kpi(s.get("id"), s.get("name", ""), s_amt)
+        elif kpi > 0:
             seller_id = sale_data.get("seller_id")
             seller_name = sale_data.get("seller_name", "")
             self.add_seller_kpi(seller_id, seller_name, kpi)

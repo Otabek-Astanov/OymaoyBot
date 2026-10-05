@@ -56,13 +56,44 @@ def partners_kb(partners: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
+def kpi_person_count_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="👤 1 kishi", callback_data="kpi_count:1"),
+                InlineKeyboardButton(text="👥 2 kishi", callback_data="kpi_count:2"),
+            ],
+            [
+                InlineKeyboardButton(text="⏭ Tashlab ketish (0$)", callback_data="kpi_count:0"),
+            ],
+        ]
+    )
+
+
+def staff_inline_kb(staff_list: List[Dict[str, Any]], exclude_id: Any = None) -> InlineKeyboardMarkup:
+    kb = []
+    excluded_roles = {"admin", "investor"}
+    for s in staff_list:
+        tg_id = s.get("Telegram ID", "")
+        name = str(s.get("F.I.Sh", s.get("Xodim ismi", ""))).strip()
+        role = str(s.get("Roli", "")).strip().lower()
+        if not name or any(ex in role for ex in excluded_roles):
+            continue
+        if exclude_id and str(tg_id).strip() == str(exclude_id).strip():
+            continue
+        cb_data = f"staff_sel:{tg_id}:{name[:25]}"
+        kb.append([InlineKeyboardButton(text=f"👨‍💼 {name}", callback_data=cb_data)])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
 def kpi_inline_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="5$", callback_data="kpi:5"), InlineKeyboardButton(text="10$", callback_data="kpi:10")],
-            [InlineKeyboardButton(text="⏭ Tashlab ketish", callback_data="kpi:0")],
+            [InlineKeyboardButton(text="⏭ Tashlab ketish (0$)", callback_data="kpi:0")],
         ]
     )
+
 
 
 def kpi_kb() -> ReplyKeyboardMarkup:

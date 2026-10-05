@@ -18,6 +18,8 @@ from bot_sotuv.keyboards import (
     partners_kb,
     kpi_kb,
     kpi_inline_kb,
+    kpi_person_count_kb,
+    staff_inline_kb,
     yes_no_kb,
 )
 from services.google_sheets import sheets_service
@@ -429,6 +431,22 @@ async def buyer_phone_entered(message: types.Message, state: FSMContext):
     )
 
 
+async def prompt_kpi_start(target: Any, state: FSMContext, is_callback: bool = False, extra_text: str = ""):
+    """KPI kiritishdan oldin necha kishi uchunligini so'rash."""
+    await state.set_state(SotuvStates.choosing_kpi_count)
+    prefix = f"{extra_text}\n" if extra_text else ""
+    prompt_text = (
+        f"{prefix}"
+        "👥 <b>Ushbu sotuv uchun KPI necha kishi uchun hisoblansin?</b>\n"
+        "<i>(KPI ko'pi bilan 2 kishiga berilishi mumkin)</i>"
+    )
+    kb = kpi_person_count_kb()
+    if is_callback:
+        await target.edit_text(prompt_text, reply_markup=kb)
+    else:
+        await target.answer(prompt_text, reply_markup=kb)
+
+
 async def _process_payment_type(ptype: str, target: Any, state: FSMContext, is_callback: bool = False):
     await state.update_data(payment_type=ptype)
 
@@ -447,16 +465,7 @@ async def _process_payment_type(ptype: str, target: Any, state: FSMContext, is_c
             initial_payment="0",
             partner_debt="0",
         )
-        await state.set_state(SotuvStates.choosing_kpi)
-        text = (
-            "🎁 <b>Sotuvchining KPI miqdorini tanlang yoki yozing ($):</b>\n"
-            "<i>(Tugmalardan tanlang, o'zingiz yozing yoki '⏭ Tashlab ketish'ni bosing)</i>"
-        )
-        kb = kpi_inline_kb()
-        if is_callback:
-            await target.edit_text(text, reply_markup=kb)
-        else:
-            await target.answer(text, reply_markup=kb)
+        await prompt_kpi_start(target, state, is_callback=is_callback)
 
 
 @router.callback_query(SotuvStates.waiting_payment_type, F.data.startswith("pay:"))
@@ -497,16 +506,13 @@ async def initial_payment_skipped_cb(call: types.CallbackQuery, state: FSMContex
         initial_payment="0",
         partner_debt=str(sell_price),
     )
-    await state.set_state(SotuvStates.choosing_kpi)
-    await call.message.answer(
+    extra = (
         f"Hisoblandi:\n"
         f"• Sotuv narxi: {sell_price}$\n"
         f"• Boshlang'ich to'lov: 0$\n"
-        f"• Hamkor/Do'kon qarzi: <b>{sell_price}$</b>\n\n"
-        "🎁 <b>Sotuvchining KPI miqdorini tanlang yoki yozing ($):</b>\n"
-        "<i>(Tugmalardan tanlang, o'zingiz yozing yoki '⏭ Tashlab ketish'ni bosing)</i>",
-        reply_markup=kpi_inline_kb(),
+        f"• Hamkor/Do'kon qarzi: <b>{sell_price}$</b>\n"
     )
+    await prompt_kpi_start(call.message, state, is_callback=False, extra_text=extra)
 
 
 @router.message(SotuvStates.waiting_initial_payment)
@@ -526,21 +532,21 @@ async def initial_payment_entered(message: types.Message, state: FSMContext):
         partner_debt=str(partner_debt),
     )
 
-    await state.set_state(SotuvStates.choosing_kpi)
-    await message.answer(
+    extra = (
         f"Hisoblandi:\n"
         f"• Sotuv narxi: {sell_price}$\n"
         f"• Boshlang'ich to'lov: {initial}$\n"
-        f"• Hamkor/Do'kon qarzi: <b>{partner_debt}$</b>\n\n"
-        "🎁 <b>Sotuvchining KPI miqdorini tanlang yoki yozing ($):</b>\n"
-        "<i>(Tugmalardan tanlang, o'zingiz yozing yoki '⏭ Tashlab ketish'ni bosing)</i>",
-        reply_markup=kpi_inline_kb(),
+        f"• Hamkor/Do'kon qarzi: <b>{partner_debt}$</b>\n"
     )
+    await prompt_kpi_start(message, state, is_callback=False, extra_text=extra)
 
 
 async def show_sale_summary(target_msg: types.Message, state: FSMContext):
     """Sotuv tasdiqlash oynasini ko'rsatish."""
     data = await state.get_data()
+    sellers = data.get("sellers")
+    seller_name_display = data.get("seller_name", "Sotuvchi")
+
     summary = (
         "📋 <b>SOTUV MA'LUMOTLARINI TASDIQLANG:</b>\n\n"
         f"📱 Model: <b>{data.get('model')}</b>\n"
@@ -555,10 +561,19 @@ async def show_sale_summary(target_msg: types.Message, state: FSMContext):
             f"💵 Boshlang'ich: <b>{data.get('initial_payment')}$</b>\n"
             f"📉 Hamkor qarzi: <b>{data.get('partner_debt')}$</b>\n"
         )
-    summary += (
-        f"🎁 Sotuvchi KPI: <b>{data.get('seller_kpi')}$</b>\n\n"
-        "<b>Ma'lumotlar to'g'rimi? Tasdiqlaysizmi?</b>"
-    )
+    if sellers and isinstance(sellers, list) and len(sellers) > 1:
+        s_details = "\n".join([f"{s.get('name')}: {s.get('kpi')}$" for s in sellers])
+        summary += (
+            f"👥 Sotuvchilar: <b>{seller_name_display}</b>\n"
+            f"🎁 Jami KPI: <b>{data.get('seller_kpi')}$</b>\n"
+            f"{s_details}\n\n"
+        )
+    else:
+        summary += (
+            f"👨‍💼 Sotuvchi: <b>{seller_name_display}</b>\n"
+            f"🎁 Sotuvchi KPI: <b>{data.get('seller_kpi', '0')}$</b>\n\n"
+        )
+    summary += "<b>Ma'lumotlar to'g'rimi? Tasdiqlaysizmi?</b>"
 
     await state.set_state(SotuvStates.confirm_sale)
 
@@ -584,26 +599,191 @@ async def show_sale_summary(target_msg: types.Message, state: FSMContext):
     await target_msg.answer(summary, reply_markup=yes_no_kb())
 
 
-@router.callback_query(SotuvStates.choosing_kpi, F.data.startswith("kpi:"))
-async def kpi_callback_chosen(call: types.CallbackQuery, state: FSMContext):
+@router.callback_query(SotuvStates.choosing_kpi_count, F.data.startswith("kpi_count:"))
+async def kpi_count_chosen(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
-    kpi_val = call.data.split(":")[1]
-    await state.update_data(seller_kpi=kpi_val)
-    await show_sale_summary(call.message, state)
+    count_str = call.data.split(":")[1]
+    user_id = call.from_user.id
+    user_name = sheets_service.get_staff_name_by_tg_id(user_id) or call.from_user.full_name
 
+    if count_str == "0":
+        # KPI yo'q (tashlab ketish)
+        await state.update_data(
+            seller_kpi="0",
+            seller_name=user_name,
+            seller_id=user_id,
+            sellers=[{"id": user_id, "name": user_name, "kpi": 0}],
+        )
+        await show_sale_summary(call.message, state)
+        return
 
-@router.message(SotuvStates.choosing_kpi)
-async def kpi_chosen(message: types.Message, state: FSMContext):
-    if message.text in ["⏭ Tashlab ketish", "Tashlab ketish"]:
-        kpi = "0"
+    count = int(count_str)
+    await state.update_data(
+        kpi_person_count=count,
+        current_user_name=user_name,
+        current_user_id=user_id,
+    )
+    await state.set_state(SotuvStates.waiting_kpi_amount_1)
+
+    if count == 1:
+        text = (
+            "🎁 <b>O'zingiz uchun belgilangan KPI miqdorini tanlang yoki yozing ($):</b>\n"
+            "<i>(Tugmalardan tanlang, o'zingiz yozing yoki '⏭ Tashlab ketish'ni bosing)</i>"
+        )
     else:
-        kpi = clean_currency(message.text)
-        if not kpi or float(kpi) < 0:
-            await message.answer("Iltimos, KPI summasini tanlang, yozing yoki '⏭ Tashlab ketish'ni bosing:", reply_markup=kpi_inline_kb())
+        text = (
+            "🎁 <b>1) O'zingiz uchun belgilangan KPI miqdorini tanlang yoki yozing ($):</b>\n"
+            "<i>(Tugmalardan tanlang, o'zingiz yozing yoki '⏭ Tashlab ketish'ni bosing)</i>"
+        )
+    await call.message.edit_text(text, reply_markup=kpi_inline_kb())
+
+
+async def _process_kpi_1_amount(amount_str: str, target_msg: types.Message, state: FSMContext, user_id: int, user_name: str):
+    kpi_1 = clean_currency(amount_str)
+    kpi_1_val = float(kpi_1) if kpi_1 else 0.0
+
+    data = await state.get_data()
+    count = data.get("kpi_person_count", 1)
+
+    if count == 1:
+        await state.update_data(
+            seller_kpi=str(kpi_1_val),
+            seller_name=user_name,
+            seller_id=user_id,
+            sellers=[{"id": user_id, "name": user_name, "kpi": kpi_1_val}],
+        )
+        await show_sale_summary(target_msg, state)
+    else:
+        await state.update_data(kpi_1=kpi_1_val)
+        staff_list = sheets_service.get_staff_list(active_only=True)
+        excluded_roles = {"admin", "investor"}
+        other_staff = [
+            s for s in staff_list
+            if str(s.get("Telegram ID", "")).strip() != str(user_id)
+            and str(s.get("F.I.Sh", "")).strip() != user_name
+            and not any(ex in str(s.get("Roli", "")).strip().lower() for ex in excluded_roles)
+        ]
+        if not other_staff:
+            await target_msg.answer(
+                "⚠️ <i>Boshqa faol xodimlar topilmadi. KPI faqat o'zingiz uchun hisoblanadi.</i>"
+            )
+            await state.update_data(
+                seller_kpi=str(kpi_1_val),
+                seller_name=user_name,
+                seller_id=user_id,
+                sellers=[{"id": user_id, "name": user_name, "kpi": kpi_1_val}],
+            )
+            await show_sale_summary(target_msg, state)
             return
 
-    await state.update_data(seller_kpi=kpi)
-    await show_sale_summary(message, state)
+        await state.set_state(SotuvStates.choosing_second_staff)
+        text = (
+            f"✅ <b>O'zingiz uchun:</b> {kpi_1_val}$\n\n"
+            "👥 <b>2) Endi ikkinchi xodimni tanlang:</b>"
+        )
+        await target_msg.answer(text, reply_markup=staff_inline_kb(other_staff, exclude_id=user_id))
+
+
+@router.callback_query(SotuvStates.waiting_kpi_amount_1, F.data.startswith("kpi:"))
+@router.callback_query(SotuvStates.choosing_kpi, F.data.startswith("kpi:"))
+async def kpi_1_callback(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    val = call.data.split(":")[1]
+    user_id = call.from_user.id
+    user_name = sheets_service.get_staff_name_by_tg_id(user_id) or call.from_user.full_name
+    await _process_kpi_1_amount(val, call.message, state, user_id, user_name)
+
+
+@router.message(SotuvStates.waiting_kpi_amount_1)
+@router.message(SotuvStates.choosing_kpi)
+async def kpi_1_entered(message: types.Message, state: FSMContext):
+    if message.text in ["⏭ Tashlab ketish", "Tashlab ketish"]:
+        val = "0"
+    else:
+        val = clean_currency(message.text)
+        if not val or float(val) < 0:
+            await message.answer(
+                "Iltimos, to'g'ri summa kiriting yoki tugmalardan birini tanlang:",
+                reply_markup=kpi_inline_kb(),
+            )
+            return
+    user_id = message.from_user.id
+    user_name = sheets_service.get_staff_name_by_tg_id(user_id) or message.from_user.full_name
+    await _process_kpi_1_amount(val, message, state, user_id, user_name)
+
+
+@router.callback_query(SotuvStates.choosing_second_staff, F.data.startswith("staff_sel:"))
+async def second_staff_chosen(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    parts = call.data.split(":", 2)
+    sec_id = parts[1]
+    sec_name = parts[2] if len(parts) > 2 else "Xodim"
+
+    await state.update_data(second_staff_id=sec_id, second_staff_name=sec_name)
+    await state.set_state(SotuvStates.waiting_kpi_amount_2)
+
+    text = (
+        f"Tanlandi: <b>{sec_name}</b>\n\n"
+        f"🎁 <b>{sec_name} uchun belgilangan KPI miqdorini tanlang yoki yozing ($):</b>\n"
+        f"<i>(Tugmalardan tanlang, o'zingiz yozing yoki '⏭ Tashlab ketish'ni bosing)</i>"
+    )
+    await call.message.edit_text(text, reply_markup=kpi_inline_kb())
+
+
+async def _process_kpi_2_amount(amount_str: str, target_msg: types.Message, state: FSMContext, user_id: int, user_name: str):
+    kpi_2 = clean_currency(amount_str)
+    kpi_2_val = float(kpi_2) if kpi_2 else 0.0
+
+    data = await state.get_data()
+    kpi_1_val = float(data.get("kpi_1", 0))
+    sec_id = data.get("second_staff_id")
+    sec_name = data.get("second_staff_name", "Xodim")
+
+    tot = kpi_1_val + kpi_2_val
+    total_kpi = int(tot) if tot.is_integer() else round(tot, 2)
+    kpi_1_display = int(kpi_1_val) if kpi_1_val.is_integer() else round(kpi_1_val, 2)
+    kpi_2_display = int(kpi_2_val) if kpi_2_val.is_integer() else round(kpi_2_val, 2)
+
+    seller_name_str = f"{user_name}, {sec_name}"
+
+    sellers = [
+        {"id": user_id, "name": user_name, "kpi": kpi_1_display},
+        {"id": sec_id, "name": sec_name, "kpi": kpi_2_display},
+    ]
+
+    await state.update_data(
+        seller_kpi=str(total_kpi),
+        seller_name=seller_name_str,
+        seller_id=user_id,
+        sellers=sellers,
+    )
+    await show_sale_summary(target_msg, state)
+
+
+@router.callback_query(SotuvStates.waiting_kpi_amount_2, F.data.startswith("kpi:"))
+async def kpi_2_callback(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    val = call.data.split(":")[1]
+    user_id = call.from_user.id
+    user_name = sheets_service.get_staff_name_by_tg_id(user_id) or call.from_user.full_name
+    await _process_kpi_2_amount(val, call.message, state, user_id, user_name)
+
+
+@router.message(SotuvStates.waiting_kpi_amount_2)
+async def kpi_2_entered(message: types.Message, state: FSMContext):
+    if message.text in ["⏭ Tashlab ketish", "Tashlab ketish"]:
+        val = "0"
+    else:
+        val = clean_currency(message.text)
+        if not val or float(val) < 0:
+            await message.answer(
+                "Iltimos, to'g'ri summa kiriting yoki tugmalardan birini tanlang:",
+                reply_markup=kpi_inline_kb(),
+            )
+            return
+    user_id = message.from_user.id
+    user_name = sheets_service.get_staff_name_by_tg_id(user_id) or message.from_user.full_name
+    await _process_kpi_2_amount(val, message, state, user_id, user_name)
 
 
 @router.message(SotuvStates.confirm_sale, F.text.in_(["✅ Ha", "❌ Yo'q"]))
@@ -616,8 +796,12 @@ async def confirm_sale_handler(message: types.Message, state: FSMContext, bot: B
     data = await state.get_data()
     user_id = message.from_user.id
     user_name = sheets_service.get_staff_name_by_tg_id(user_id) or message.from_user.full_name
-    data["seller_name"] = user_name
-    data["seller_id"] = user_id
+    if not data.get("seller_name"):
+        data["seller_name"] = user_name
+    if not data.get("seller_id"):
+        data["seller_id"] = user_id
+    if not data.get("sellers"):
+        data["sellers"] = [{"id": user_id, "name": user_name, "kpi": float(data.get("seller_kpi", 0) or 0)}]
 
     loading_msg = await message.answer("⏳ Sotuv rasmiylashtirilmoqda, iltimos kuting...")
 
@@ -651,11 +835,19 @@ async def confirm_sale_handler(message: types.Message, state: FSMContext, bot: B
     if channel_post_id and str(channel_post_id).isdigit():
         channel_status = "\n• Telegram kanaldagi e'lon tahrirlandi ✅" if channel_edited else "\n• Telegram kanaldagi e'lon tahrirlanmadi ⚠️"
 
+    sellers_list = data.get("sellers")
+    if sellers_list and isinstance(sellers_list, list) and len(sellers_list) > 1:
+        s_kpi_text = f"• Jami KPI: <b>{data.get('seller_kpi')}$</b>\n"
+        for s in sellers_list:
+            s_kpi_text += f"  {s.get('name')}: {s.get('kpi')}$\n"
+    else:
+        s_kpi_text = f"• Sotuvchi KPI: <b>{data.get('seller_kpi')}$</b>\n"
+
     await state.clear()
     await message.answer(
         "🎉 <b>Sotuv muvaffaqiyatli rasmiylashtirildi!</b>\n\n"
         f"• Sotuv narxi: <b>{data.get('sell_price')}$</b>\n"
-        f"• Sotuvchi KPI: <b>{data.get('seller_kpi')}$</b>\n"
+        f"{s_kpi_text}"
         f"• 💰 <b>Do‘konga sof foyda: +{profit:.1f}$</b>\n\n"
         f"{group_status}\n"
         "• Google Sheets 'Telefonlar' jadvaliga saqlandi ✅"

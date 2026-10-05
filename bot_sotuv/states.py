@@ -11,4 +11,9 @@ class SotuvStates(StatesGroup):
     choosing_partner = State()
     waiting_initial_payment = State()
     choosing_kpi = State()
+    choosing_kpi_count = State()
+    waiting_kpi_amount_1 = State()
+    choosing_second_staff = State()
+    waiting_kpi_amount_2 = State()
     confirm_sale = State()
+

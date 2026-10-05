@@ -124,10 +124,19 @@ class TelegramPosterService:
                 f"📉 Hamkor qarzi: <b>{sale_data.get('partner_debt')}$</b>\n"
             )
 
-        text += (
-            f"\n🎁 Sotuvchi KPI: <b>{sale_data.get('seller_kpi')}$</b>\n"
-            f"👨‍💼 Sotuvchi: <b>{sale_data.get('seller_name')}</b>"
-        )
+        sellers = sale_data.get("sellers")
+        if sellers and isinstance(sellers, list) and len(sellers) > 1:
+            seller_details = "\n".join([f"{s.get('name', 'Xodim')}: {s.get('kpi', 0)}$" for s in sellers])
+            text += (
+                f"\n🎁 Jami KPI: <b>{sale_data.get('seller_kpi')}$</b>\n"
+                f"{seller_details}\n"
+                f"👨‍💼 Sotuvchilar: <b>{sale_data.get('seller_name')}</b>"
+            )
+        else:
+            text += (
+                f"\n🎁 Sotuvchi KPI: <b>{sale_data.get('seller_kpi')}$</b>\n"
+                f"👨‍💼 Sotuvchi: <b>{sale_data.get('seller_name')}</b>"
+            )
 
         phone_data = sale_data.get("phone_data", {}) if isinstance(sale_data.get("phone_data"), dict) else {}
         photo_field = (
