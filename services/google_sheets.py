@@ -217,6 +217,34 @@ class GoogleSheetsService:
         if len(clean_imei) > 6:
             self._phones_cache[clean_imei[-6:]] = item
 
+    @staticmethod
+    def _safe_get_all_records(ws) -> List[Dict[str, Any]]:
+        """
+        get_all_records() ning xavfsiz alternativi:
+        Jadvalda bo'sh yoki dublikat sarlavhali ustunlar bo'lsa ham xatoliksiz
+        faqat nomi bor ustunlar bo'yicha lug'atlar ro'yxatini qaytaradi.
+        """
+        try:
+            all_vals = ws.get_all_values()
+            if not all_vals or len(all_vals) < 2:
+                return []
+
+            raw_header = all_vals[0]
+            valid_cols = [(idx, str(h).strip()) for idx, h in enumerate(raw_header) if str(h).strip()]
+
+            records = []
+            for r_val in all_vals[1:]:
+                if not any(r_val):
+                    continue
+                row_dict = {}
+                for col_idx, col_name in valid_cols:
+                    row_dict[col_name] = r_val[col_idx] if col_idx < len(r_val) else ""
+                records.append(row_dict)
+            return records
+        except Exception as e:
+            logger.error(f"_safe_get_all_records xatosi ({getattr(ws, 'title', '')}): {e}")
+            return []
+
     def _load_phones_cache(self, force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
         """Telefonlar keshini yuklaydi yoki qaytaradi."""
         now = time.time()
@@ -230,26 +258,39 @@ class GoogleSheetsService:
 
         try:
             ws = self.spreadsheet.worksheet(config.SHEET_PHONES)
-            records = ws.get_all_records()
+            all_vals = ws.get_all_values()
+            if not all_vals or len(all_vals) < 2:
+                self._phones_cache = {}
+                self._phones_cache_time = now
+                return self._phones_cache
+
+            raw_header = all_vals[0]
+            valid_cols = [(idx, str(h).strip()) for idx, h in enumerate(raw_header) if str(h).strip()]
+
             formulas: List[List[Any]] = []
             try:
                 formulas = ws.get(value_render_option="FORMULA", pad_values=True)
             except Exception as fe:
                 logger.warning(f"Telefonlar formulalarini olishda ogohlantirish: {fe}")
 
-            header = formulas[0] if formulas else []
-            imei_photo_idx = header.index("IMEI rasmi") if "IMEI rasmi" in header else -1
-            phone_photo_idx = header.index("Telefon rasmi") if "Telefon rasmi" in header else -1
-
             cache: Dict[str, Dict[str, Any]] = {}
-            for idx, row in enumerate(records, start=2):
-                row["_row_index"] = idx
-                if formulas and idx - 1 < len(formulas):
-                    f_row = formulas[idx - 1]
-                    if imei_photo_idx != -1 and imei_photo_idx < len(f_row) and f_row[imei_photo_idx]:
-                        row["IMEI rasmi"] = f_row[imei_photo_idx]
-                    if phone_photo_idx != -1 and phone_photo_idx < len(f_row) and f_row[phone_photo_idx]:
-                        row["Telefon rasmi"] = f_row[phone_photo_idx]
+            loaded_count = 0
+            for r_idx, r_val in enumerate(all_vals[1:], start=2):
+                if not any(r_val):
+                    continue
+                loaded_count += 1
+                row = {}
+                for col_idx, col_name in valid_cols:
+                    row[col_name] = r_val[col_idx] if col_idx < len(r_val) else ""
+                row["_row_index"] = r_idx
+
+                if formulas and r_idx - 1 < len(formulas):
+                    f_row = formulas[r_idx - 1]
+                    for c_idx, c_name in valid_cols:
+                        if c_name == "IMEI rasmi" and c_idx < len(f_row) and f_row[c_idx]:
+                            row["IMEI rasmi"] = f_row[c_idx]
+                        elif c_name == "Telefon rasmi" and c_idx < len(f_row) and f_row[c_idx]:
+                            row["Telefon rasmi"] = f_row[c_idx]
 
                 if "Model" not in row or not row["Model"]:
                     brand = row.get("Brend", "")
@@ -268,7 +309,7 @@ class GoogleSheetsService:
                             cache[imei[-6:]] = row
             self._phones_cache = cache
             self._phones_cache_time = now
-            logger.info(f"Telefonlar keshi yangilandi: {len(records)} ta telefon yuklandi.")
+            logger.info(f"Telefonlar keshi yangilandi: {loaded_count} ta telefon yuklandi.")
             return cache
         except Exception as e:
             logger.error(f"_load_phones_cache xatosi: {e}")
@@ -322,9 +363,12 @@ class GoogleSheetsService:
 
         try:
             ws = self.spreadsheet.worksheet(config.SHEET_PHONES)
-            ws.append_row(row, value_input_option="USER_ENTERED")
-            new_idx = len(self._phones_cache or {}) + 2
-            self._update_local_phone_cache(imei, row, new_idx)
+            col_a = ws.col_values(1)
+            next_row = len(col_a) + 1
+            if next_row > ws.row_count:
+                ws.add_rows(50)
+            ws.update(values=[row], range_name=f"A{next_row}", value_input_option="USER_ENTERED")
+            self._update_local_phone_cache(imei, row, next_row)
             return True
         except Exception as e:
             logger.error(f"add_phone xatosi: {e}")
@@ -442,7 +486,7 @@ class GoogleSheetsService:
             return
         try:
             ws = self.spreadsheet.worksheet(config.SHEET_PARTNERS)
-            records = ws.get_all_records()
+            records = self._safe_get_all_records(ws)
             sep = self.formula_sep
             for idx, r in enumerate(records, start=2):
                 if str(r.get("Hamkor nomi", "")).strip().lower() == partner_name.strip().lower():
@@ -479,7 +523,7 @@ class GoogleSheetsService:
 
             # 2. Hamkorlar jadvalidagi yacheykada formula borligini tekshirish, bo'lmasa formulani tiklash
             ws_part = self.spreadsheet.worksheet(config.SHEET_PARTNERS)
-            records = ws_part.get_all_records()
+            records = self._safe_get_all_records(ws_part)
             sep = self.formula_sep
             for idx, r in enumerate(records, start=2):
                 if str(r.get("Hamkor nomi", "")).strip().lower() == partner_name.strip().lower():
@@ -505,7 +549,7 @@ class GoogleSheetsService:
             else:
                 try:
                     ws = self.spreadsheet.worksheet(config.SHEET_STAFF)
-                    records = ws.get_all_records()
+                    records = self._safe_get_all_records(ws)
                     self._staff_cache = records
                     self._staff_cache_time = now
                 except Exception as e:
@@ -522,7 +566,7 @@ class GoogleSheetsService:
             return True
         try:
             ws = self.spreadsheet.worksheet(config.SHEET_STAFF)
-            records = ws.get_all_records()
+            records = self._safe_get_all_records(ws)
             headers = ws.row_values(1)
             for idx, r in enumerate(records, start=2):
                 row_tg_id = str(r.get("Telegram ID", "")).strip()
@@ -561,7 +605,7 @@ class GoogleSheetsService:
             return True
         try:
             ws_staff = self.spreadsheet.worksheet(config.SHEET_STAFF)
-            records = ws_staff.get_all_records()
+            records = self._safe_get_all_records(ws_staff)
             headers = ws_staff.row_values(1)
             clean_amt = clean_num(amount)
             for idx, r in enumerate(records, start=2):
@@ -749,7 +793,7 @@ class GoogleSheetsService:
             # 1. Kirimlar jadvali
             try:
                 ws_inc = self.spreadsheet.worksheet(config.SHEET_INCOMES)
-                for r in ws_inc.get_all_records():
+                for r in self._safe_get_all_records(ws_inc):
                     val = str(r.get("Summa ($)", "0")).replace("$", "").replace(",", "").strip()
                     if val:
                         summary["total_income"] += float(val)
@@ -759,7 +803,7 @@ class GoogleSheetsService:
             # 2. Chiqimlar jadvali
             try:
                 ws_exp = self.spreadsheet.worksheet(config.SHEET_EXPENSES)
-                for r in ws_exp.get_all_records():
+                for r in self._safe_get_all_records(ws_exp):
                     val = str(r.get("Summa ($)", "0")).replace("$", "").replace(",", "").strip()
                     if val:
                         summary["total_expense"] += float(val)
@@ -769,7 +813,7 @@ class GoogleSheetsService:
             # 3. Telefonlar jadvali (Haridlar, Sotuvlar, Telefon qarzlari, Foyda)
             try:
                 ws_ph = self.spreadsheet.worksheet(config.SHEET_PHONES)
-                for r in ws_ph.get_all_records():
+                for r in self._safe_get_all_records(ws_ph):
                     status = str(r.get("Holati", "")).strip()
                     if status == "Sotildi":
                         pay_type = str(r.get("Sotuv to'lov turi", "")).strip()
@@ -799,7 +843,7 @@ class GoogleSheetsService:
             # 4. Hamkorlar qarzdorligi
             try:
                 ws_part = self.spreadsheet.worksheet(config.SHEET_PARTNERS)
-                for r in ws_part.get_all_records():
+                for r in self._safe_get_all_records(ws_part):
                     summary["partner_debts"] += clean_num(r.get("Hozirgi qarzdorlik ($)", 0))
             except Exception as e:
                 logger.warning(f"Hamkorlar o'qishda xato: {e}")
@@ -807,7 +851,7 @@ class GoogleSheetsService:
             # 5. Xodimlar KPI qarzdorligi
             try:
                 ws_st = self.spreadsheet.worksheet(config.SHEET_STAFF)
-                for r in ws_st.get_all_records():
+                for r in self._safe_get_all_records(ws_st):
                     kpi = str(r.get("Qoldiq KPI ($)", "0")).replace("$", "").replace(",", "").strip()
                     if kpi:
                         summary["staff_kpi_debts"] += float(kpi)
@@ -857,7 +901,7 @@ class GoogleSheetsService:
             ]
         try:
             ws = self.spreadsheet.worksheet(config.SHEET_MODELS)
-            records = ws.get_all_records()
+            records = self._safe_get_all_records(ws)
             self._models_cache = records
             self._models_cache_time = now
             return records
@@ -891,7 +935,7 @@ class GoogleSheetsService:
 
         try:
             ws = self.spreadsheet.worksheet(config.SHEET_PARTNERS)
-            records = ws.get_all_records()
+            records = self._safe_get_all_records(ws)
             self._partners_cache = records
             self._partners_cache_time = now
             return records
@@ -922,7 +966,7 @@ class GoogleSheetsService:
 
         try:
             ws = self.spreadsheet.worksheet(config.SHEET_TEMPLATES)
-            records = ws.get_all_records()
+            records = self._safe_get_all_records(ws)
             cache: Dict[str, str] = {}
             for r in records:
                 t_type = str(r.get("Shablon turi", "")).strip().lower()
