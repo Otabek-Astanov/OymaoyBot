@@ -29,3 +29,9 @@ class ChannelPostStates(StatesGroup):
     waiting_channel_photo = State()
     waiting_sell_price = State()
     confirm_post = State()
+
+
+class KarobkaStates(StatesGroup):
+    waiting_imei = State()
+    confirm_phone = State()
+

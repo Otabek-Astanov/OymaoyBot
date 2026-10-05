@@ -10,6 +10,7 @@ def main_menu_kb() -> ReplyKeyboardMarkup:
     kb = [
         [KeyboardButton(text="📥 Harid qilish")],
         [KeyboardButton(text="📢 Telegram kanalga e'lon berish")],
+        [KeyboardButton(text="📦 Karobka")],
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, is_persistent=True)
 
@@ -63,7 +64,11 @@ def memory_kb() -> InlineKeyboardMarkup:
 
 def box_kb() -> ReplyKeyboardMarkup:
     kb = [
-        [KeyboardButton(text="✅ Ha"), KeyboardButton(text="❌ Yo'q")],
+        [
+            KeyboardButton(text="✅ Ha"),
+            KeyboardButton(text="❌ Yo'q"),
+            KeyboardButton(text="⏳ Keladi"),
+        ],
         [KeyboardButton(text="🚫 Bekor qilish")],
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, is_persistent=True)

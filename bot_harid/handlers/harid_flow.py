@@ -9,7 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 
 import config
-from bot_harid.states import HaridStates, ChannelPostStates
+from bot_harid.states import HaridStates, ChannelPostStates, KarobkaStates
 from bot_harid.keyboards import (
     main_menu_kb,
     cancel_kb,
@@ -564,9 +564,14 @@ async def imei_6_entered(message: types.Message, state: FSMContext):
     )
 
 
-@router.message(HaridStates.waiting_box, F.text.in_(["✅ Ha", "❌ Yo'q"]))
+@router.message(HaridStates.waiting_box, F.text.in_(["✅ Ha", "❌ Yo'q", "⏳ Keladi", "Ha", "Yo'q", "Keladi"]))
 async def box_chosen(message: types.Message, state: FSMContext):
-    has_box = "Ha" if "Ha" in message.text else "Yo'q"
+    if "Ha" in message.text:
+        has_box = "Ha"
+    elif "Keladi" in message.text:
+        has_box = "Keladi"
+    else:
+        has_box = "Yo'q"
     await state.update_data(has_box=has_box)
 
     await state.set_state(HaridStates.waiting_buy_price)
@@ -1091,3 +1096,119 @@ async def post_sell_price_received(message: types.Message, state: FSMContext, bo
             "<i>(Sabab: Bot kanalda admin emas yoki kanal ID si noto'g'ri sozlangan bo'lishi mumkin)</i>",
             reply_markup=main_menu_kb(),
         )
+
+
+# ==========================================
+# 3. KAROBKA HOLATINI YANGILASH OQIMI (FSM)
+# ==========================================
+
+@router.message(F.text.in_(["📦 Karobka", "Karobka"]))
+async def start_karobka_update(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    is_active, role, _ = sheets_service.check_member(user_id)
+    if not is_active or role == "Investor":
+        await message.answer("Sizga ruxsat berilmagan.")
+        return
+
+    await state.clear()
+    await state.set_state(KarobkaStates.waiting_imei)
+    await message.answer(
+        "📦 <b>Karobkasi keltirilgan telefonning IMEI kodini (yoki oxirgi 6 raqamini) kiriting:</b>",
+        reply_markup=cancel_kb("IMEI yoki oxirgi 6 raqam..."),
+    )
+
+
+@router.message(KarobkaStates.waiting_imei)
+async def process_karobka_imei(message: types.Message, state: FSMContext):
+    imei_input = (message.text or "").strip()
+    if not imei_input:
+        await message.answer("Iltimos, telefonning IMEI kodini kiriting:")
+        return
+
+    phone = sheets_service.get_phone_by_imei(imei_input)
+    if not phone:
+        await message.answer(
+            "❌ <b>Bunday IMEI ga ega telefon topilmadi!</b>\n\n"
+            "Iltimos, tekshirib qayta kiriting yoki '🚫 Bekor qilish'ni bosing:",
+            reply_markup=cancel_kb("IMEI yoki oxirgi 6 raqam..."),
+        )
+        return
+
+    box_status = str(phone.get("Karobka", "")).strip()
+    clean_box = box_status.lower()
+
+    # Agar karobka statusi allaqachon "Ha" yoki "Bor" bo'lsa
+    if clean_box in ["ha", "bor"]:
+        await state.clear()
+        actual_imei = phone.get("IMEI", phone.get("IMEI (oxirgi 6)", imei_input))
+        model_name = phone.get("Model", "Telefon")
+        await message.answer(
+            f"ℹ️ <b>Ushbu telefonning karobkasi allaqachon mavjud ('{box_status}')!</b>\n\n"
+            f"📱 Model: <b>{model_name}</b>\n"
+            f"🔍 IMEI: <code>{actual_imei}</code>\n"
+            f"📦 Karobka holati: <b>{box_status}</b>",
+            reply_markup=main_menu_kb(),
+        )
+        return
+
+    # Karobkasi "Keladi" yoki "Yo'q" (yoki boshqa holatda) bo'lsa
+    row_idx = phone.get("_row_index")
+    actual_imei = phone.get("IMEI", phone.get("IMEI (oxirgi 6)", imei_input))
+    model_name = phone.get("Model", "Telefon")
+    color = phone.get("Rang", "-")
+    memory = phone.get("Xotira", "-")
+    buy_date = phone.get("Harid sanasi", "-")
+
+    await state.update_data(
+        row_index=row_idx,
+        imei=actual_imei,
+        model=model_name,
+    )
+    await state.set_state(KarobkaStates.confirm_phone)
+
+    info_text = (
+        "📱 <b>Qurilma ma'lumotlari:</b>\n\n"
+        f"🏷 Model: <b>{model_name}</b>\n"
+        f"💾 Xotira: <b>{memory}</b>\n"
+        f"🎨 Rang: <b>{color}</b>\n"
+        f"🔍 IMEI: <code>{actual_imei}</code>\n"
+        f"📅 Harid sanasi: <b>{buy_date}</b>\n"
+        f"📦 Joriy karobka holati: <b>{box_status or 'Mavjud emas'}</b>\n\n"
+        "❓ <b>Rostdan ham ushbu telefonning karobkasi keltirildimi?</b>"
+    )
+
+    await message.answer(info_text, reply_markup=yes_no_kb())
+
+
+@router.message(KarobkaStates.confirm_phone, F.text.in_(["✅ Ha", "❌ Yo'q", "Ha", "Yo'q"]))
+async def confirm_karobka_update(message: types.Message, state: FSMContext):
+    if "Yo'q" in message.text:
+        await state.set_state(KarobkaStates.waiting_imei)
+        await message.answer(
+            "📦 <b>Unda telefonning to'g'ri IMEI kodini (yoki oxirgi 6 raqamini) kiriting:</b>",
+            reply_markup=cancel_kb("IMEI yoki oxirgi 6 raqam..."),
+        )
+        return
+
+    data = await state.get_data()
+    row_idx = data.get("row_index")
+    actual_imei = data.get("imei", "")
+    model_name = data.get("model", "Telefon")
+
+    if row_idx:
+        sheets_service.update_phone(row_idx, {"Karobka": "Ha"})
+
+    await state.clear()
+    await message.answer(
+        f"✅ <b>{model_name} (IMEI: <code>{actual_imei}</code>) karobka holati muvaffaqiyatli 'Ha' ga o'zgartirildi!</b>",
+        reply_markup=main_menu_kb(),
+    )
+
+
+@router.message(KarobkaStates.confirm_phone)
+async def invalid_confirm_karobka(message: types.Message):
+    await message.answer(
+        "Iltimos, tasdiqlash uchun quyidagi tugmalardan birini tanlang:",
+        reply_markup=yes_no_kb(),
+    )
+
