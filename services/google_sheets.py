@@ -208,10 +208,13 @@ class GoogleSheetsService:
 
         clean_imei = str(imei).strip()
         if "Model" not in item or not item["Model"]:
-            brand = item.get("Brend", "")
-            version = item.get("Versiya", "")
-            turi = item.get("Turi", "")
-            item["Model"] = f"{brand} {version} {turi}".replace("  ", " ").strip()
+            brand = str(item.get("Brend", "")).strip()
+            version = str(item.get("Versiya", "")).strip()
+            turi = str(item.get("Turi", "")).strip()
+            if brand.lower() != "iphone":
+                item["Model"] = version or f"{brand} {version}".strip()
+            else:
+                item["Model"] = f"{brand} {version} {turi}".replace("  ", " ").strip()
 
         self._phones_cache[clean_imei] = item
         if len(clean_imei) > 6:
@@ -293,10 +296,13 @@ class GoogleSheetsService:
                             row["Telefon rasmi"] = f_row[c_idx]
 
                 if "Model" not in row or not row["Model"]:
-                    brand = row.get("Brend", "")
-                    version = row.get("Versiya", "")
-                    turi = row.get("Turi", "")
-                    row["Model"] = f"{brand} {version} {turi}".replace("  ", " ").strip()
+                    brand = str(row.get("Brend", "")).strip()
+                    version = str(row.get("Versiya", "")).strip()
+                    turi = str(row.get("Turi", "")).strip()
+                    if brand.lower() != "iphone":
+                        row["Model"] = version or f"{brand} {version}".strip()
+                    else:
+                        row["Model"] = f"{brand} {version} {turi}".replace("  ", " ").strip()
 
                 imei = str(row.get("IMEI", row.get("IMEI (oxirgi 6)", ""))).strip().lstrip("'")
                 if imei:

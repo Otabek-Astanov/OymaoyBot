@@ -400,7 +400,7 @@ async def custom_model_entered(message: types.Message, state: FSMContext):
     model_name = message.text.strip()
     data = await state.get_data()
     brand = data.get("brand", "Boshqa")
-    await state.update_data(model=model_name, version=model_name, type="Boshqa")
+    await state.update_data(model=model_name, version=model_name, type="")
 
     await state.set_state(HaridStates.waiting_imei_photo)
     await message.answer(

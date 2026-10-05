@@ -33,8 +33,12 @@ OPTIONAL_TEMPLATE_KEYS = {
 
 def render_channel_template(template: str, data: Dict[str, Any]) -> str:
     """Shablon matnini berilgan ma'lumotlar bilan dinamik to'ldiradi."""
-    model = clean_val(data.get("model") or data.get("Model")) or "Telefon"
     brand = clean_val(data.get("brand") or data.get("Brend")) or ""
+    version = clean_val(data.get("version") or data.get("Versiya")) or ""
+    if brand and brand.lower() != "iphone" and version:
+        model = version
+    else:
+        model = clean_val(data.get("model") or data.get("Model")) or version or "Telefon"
     memory = clean_val(data.get("memory") or data.get("Xotira")) or ""
     color = clean_val(data.get("color") or data.get("Rang")) or ""
     box = clean_val(data.get("has_box") or data.get("Karobka")) or ""
@@ -140,7 +144,12 @@ def build_channel_caption(data: Dict[str, Any], is_sold: bool = False) -> str:
 
 def build_buy_group_caption(data: Dict[str, Any]) -> str:
     """Harid guruhiga yuboriladigan hisobot matnini shakllantiradi."""
-    model = data.get("model") or data.get("Model") or "Qurilma"
+    brand = data.get("brand") or data.get("Brand") or data.get("Brend") or ""
+    version = data.get("version") or data.get("Versiya") or ""
+    if brand and str(brand).strip().lower() != "iphone" and version:
+        model = str(version).strip()
+    else:
+        model = data.get("model") or data.get("Model") or "Qurilma"
     memory = clean_val(data.get("memory") or data.get("Xotira"))
     
     battery = clean_val(data.get("battery") or data.get("Batareya %"))
