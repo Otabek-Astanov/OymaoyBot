@@ -322,8 +322,8 @@ class GoogleSheetsService:
         buy_price = clean_num(phone_data.get("buy_price", 0))
         debt_amount = clean_num(phone_data.get("debt_amount", 0))
         imei = str(phone_data.get("imei", phone_data.get("imei_6", ""))).strip().lstrip("'")
-        # 0 bilan boshlansa, Google Sheets son deb 0 ni o'chirib yubormasligi uchun apostrof bilan yoziladi
-        imei_for_sheet = f"'{imei}" if imei.startswith("0") else imei
+        # IMEI har doim qat'iy matn sifatida saqlanishi uchun apostrof bilan yoziladi
+        imei_for_sheet = f"'{imei}"
 
         row = [
             # 1. Harid ma'lumotlari
