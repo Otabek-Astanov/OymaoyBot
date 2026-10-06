@@ -206,7 +206,9 @@ class GoogleSheetsService:
             item[h] = str(val)
         item["_row_index"] = row_idx
 
-        clean_imei = str(imei).strip()
+        clean_imei = str(imei).strip().lstrip("'")
+        if "IMEI" in item:
+            item["IMEI"] = str(item["IMEI"]).strip().lstrip("'")
         if "Model" not in item or not item["Model"]:
             brand = str(item.get("Brend", "")).strip()
             version = str(item.get("Versiya", "")).strip()
@@ -305,6 +307,8 @@ class GoogleSheetsService:
                         row["Model"] = f"{brand} {version} {turi}".replace("  ", " ").strip()
 
                 imei = str(row.get("IMEI", row.get("IMEI (oxirgi 6)", ""))).strip().lstrip("'")
+                if "IMEI" in row:
+                    row["IMEI"] = imei
                 if imei:
                     current_status = str(row.get("Holati", "")).strip()
                     existing = cache.get(imei)
@@ -328,13 +332,10 @@ class GoogleSheetsService:
         buy_price = clean_num(phone_data.get("buy_price", 0))
         debt_amount = clean_num(phone_data.get("debt_amount", 0))
         imei = str(phone_data.get("imei", phone_data.get("imei_6", ""))).strip().lstrip("'")
-        # IMEI har doim qat'iy matn sifatida saqlanishi uchun apostrof bilan yoziladi
-        imei_for_sheet = f"'{imei}"
-
         row = [
             # 1. Harid ma'lumotlari
             get_now_str(),  # Harid sanasi (1-ustun)
-            imei_for_sheet,
+            imei,
             str(phone_data.get("brand", "iPhone")),
             str(phone_data.get("version", "")),
             str(phone_data.get("type", "")),

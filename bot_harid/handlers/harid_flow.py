@@ -898,7 +898,7 @@ async def imei_searched(message: types.Message, state: FSMContext):
         )
         return
 
-    actual_imei = phone.get("IMEI", phone.get("IMEI (oxirgi 6)", imei_input))
+    actual_imei = str(phone.get("IMEI", phone.get("IMEI (oxirgi 6)", imei_input))).strip().lstrip("'")
     model = phone.get("Model", "Qurilma")
     memory = phone.get("Xotira")
     battery = phone.get("Batareya %")
@@ -1140,7 +1140,7 @@ async def process_karobka_imei(message: types.Message, state: FSMContext):
     # Agar karobka statusi allaqachon "Ha" yoki "Bor" bo'lsa
     if clean_box in ["ha", "bor"]:
         await state.clear()
-        actual_imei = phone.get("IMEI", phone.get("IMEI (oxirgi 6)", imei_input))
+        actual_imei = str(phone.get("IMEI", phone.get("IMEI (oxirgi 6)", imei_input))).strip().lstrip("'")
         model_name = phone.get("Model", "Telefon")
         await message.answer(
             f"ℹ️ <b>Ushbu telefonning karobkasi allaqachon mavjud ('{box_status}')!</b>\n\n"
@@ -1153,7 +1153,7 @@ async def process_karobka_imei(message: types.Message, state: FSMContext):
 
     # Karobkasi "Keladi" yoki "Yo'q" (yoki boshqa holatda) bo'lsa
     row_idx = phone.get("_row_index")
-    actual_imei = phone.get("IMEI", phone.get("IMEI (oxirgi 6)", imei_input))
+    actual_imei = str(phone.get("IMEI", phone.get("IMEI (oxirgi 6)", imei_input))).strip().lstrip("'")
     model_name = phone.get("Model", "Telefon")
     color = phone.get("Rang", "-")
     memory = phone.get("Xotira", "-")
@@ -1192,7 +1192,7 @@ async def confirm_karobka_update(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
     row_idx = data.get("row_index")
-    actual_imei = data.get("imei", "")
+    actual_imei = str(data.get("imei", "")).strip().lstrip("'")
     model_name = data.get("model", "Telefon")
 
     if row_idx:

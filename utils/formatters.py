@@ -46,8 +46,8 @@ def render_channel_template(template: str, data: Dict[str, Any]) -> str:
     raw_battery = clean_val(data.get("battery") or data.get("Batareya %")) or ""
     battery_digits = raw_battery.replace("%", "").strip() if raw_battery else ""
 
-    raw_imei = clean_val(data.get("imei") or data.get("IMEI")) or ""
-    raw_imei_6 = clean_val(data.get("imei_6") or data.get("IMEI (oxirgi 6)")) or ""
+    raw_imei = (clean_val(data.get("imei") or data.get("IMEI")) or "").strip().lstrip("'")
+    raw_imei_6 = (clean_val(data.get("imei_6") or data.get("IMEI (oxirgi 6)")) or "").strip().lstrip("'")
     if not raw_imei_6 and raw_imei:
         raw_imei_6 = raw_imei[-6:] if len(raw_imei) >= 6 else raw_imei
 
@@ -158,7 +158,7 @@ def build_buy_group_caption(data: Dict[str, Any]) -> str:
 
     color = clean_val(data.get("color") or data.get("Rang"))
     box = clean_val(data.get("has_box") or data.get("Karobka"))
-    imei = clean_val(data.get("imei") or data.get("imei_6") or data.get("IMEI"))
+    imei = (clean_val(data.get("imei") or data.get("imei_6") or data.get("IMEI")) or "").strip().lstrip("'")
     buy_price = clean_val(data.get("buy_price") or data.get("Harid narxi ($)"))
     ptype = clean_val(data.get("payment_type") or data.get("Harid to'lov turi")) or "Naqd"
     debt = clean_val(data.get("debt_amount") or data.get("Harid qarz summasi ($)"))
@@ -210,7 +210,7 @@ def build_purchase_summary(data: Dict[str, Any]) -> str:
         battery = f"{battery}%"
     color = clean_val(data.get("color"))
     box = clean_val(data.get("has_box"))
-    imei = clean_val(data.get("imei") or data.get("imei_6"))
+    imei = (clean_val(data.get("imei") or data.get("imei_6")) or "").strip().lstrip("'")
     buy_price = clean_val(data.get("buy_price"))
     ptype = clean_val(data.get("payment_type")) or "Naqd"
     seller = clean_val(data.get("seller_name"))
@@ -257,7 +257,7 @@ def build_purchase_summary(data: Dict[str, Any]) -> str:
 
 def build_sotuv_phone_info(phone: Dict[str, Any]) -> str:
     """Sotuv botida IMEI kiritilganda telefon ma'lumotlari matni."""
-    actual_imei = phone.get("IMEI", phone.get("IMEI (oxirgi 6)", ""))
+    actual_imei = str(phone.get("IMEI", phone.get("IMEI (oxirgi 6)", ""))).strip().lstrip("'")
     lines = ["📱 <b>Qurilma ma'lumotlari:</b>\n", f"Model: <b>{phone.get('Model')}</b>"]
     
     specs = []

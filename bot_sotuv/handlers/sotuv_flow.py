@@ -259,7 +259,7 @@ async def imei_entered(message: types.Message, state: FSMContext):
         )
         return
 
-    actual_imei = phone.get("IMEI", phone.get("IMEI (oxirgi 6)", imei_input))
+    actual_imei = str(phone.get("IMEI", phone.get("IMEI (oxirgi 6)", imei_input))).strip().lstrip("'")
     status = phone.get("Holati", "")
     if status == "Sotildi":
         model = phone.get("Model", "Qurilma")
