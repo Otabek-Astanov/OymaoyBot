@@ -21,6 +21,7 @@ from bot_harid.keyboards import (
     payment_type_kb,
     yes_no_kb,
     post_channel_kb,
+    condition_inline_kb,
 )
 from services.google_sheets import sheets_service
 from services.google_drive import drive_service
@@ -765,10 +766,10 @@ async def channel_photo_skipped_cb(call: types.CallbackQuery, state: FSMContext)
     # Haridda olingan IMEI rasmi bo'lsa o'shani ishlatamiz
     imei_photo = data.get("imei_photo_file_id")
     await state.update_data(phone_photo_file_id=imei_photo)
-    await state.set_state(HaridStates.waiting_sell_price)
+    await state.set_state(HaridStates.waiting_condition)
     await call.message.answer(
-        "💰 <b>Kanalda ko'rsatiladigan sotuv narxini kiriting ($):</b>\n<i>(Masalan: 550)</i>",
-        reply_markup=cancel_kb(),
+        "✨ <b>Telefon holatini tanlang:</b>",
+        reply_markup=condition_inline_kb("hcond"),
     )
 
 
@@ -778,10 +779,10 @@ async def channel_photo_skipped(message: types.Message, state: FSMContext):
     # Haridda olingan IMEI rasmi bo'lsa o'shani ishlatamiz
     imei_photo = data.get("imei_photo_file_id")
     await state.update_data(phone_photo_file_id=imei_photo)
-    await state.set_state(HaridStates.waiting_sell_price)
+    await state.set_state(HaridStates.waiting_condition)
     await message.answer(
-        "💰 <b>Kanalda ko'rsatiladigan sotuv narxini kiriting ($):</b>\n<i>(Masalan: 550)</i>",
-        reply_markup=cancel_kb(),
+        "✨ <b>Telefon holatini tanlang:</b>",
+        reply_markup=condition_inline_kb("hcond"),
     )
 
 
@@ -789,8 +790,37 @@ async def channel_photo_skipped(message: types.Message, state: FSMContext):
 async def channel_photo_received(message: types.Message, state: FSMContext, bot: Bot):
     photo = message.photo[-1]
     await state.update_data(phone_photo_file_id=photo.file_id)
+    await state.set_state(HaridStates.waiting_condition)
+    await message.answer(
+        "✨ <b>Telefon holatini tanlang:</b>",
+        reply_markup=condition_inline_kb("hcond"),
+    )
+
+
+@router.callback_query(HaridStates.waiting_condition, F.data.startswith("hcond:"))
+async def harid_condition_cb(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    cond = call.data.split(":", 1)[1]
+    await state.update_data(condition=cond)
+    await state.set_state(HaridStates.waiting_sell_price)
+    await call.message.answer(
+        f"Holat: <b>{cond}</b>\n\n"
+        "💰 <b>Kanalda ko'rsatiladigan sotuv narxini kiriting ($):</b>\n<i>(Masalan: 550)</i>",
+        reply_markup=cancel_kb(),
+    )
+
+
+@router.message(HaridStates.waiting_condition, F.text)
+async def harid_condition_text(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    clean_cond = text.replace("✨", "").replace("👍", "").replace("👌", "").strip()
+    cond_map = {"ideal": "Ideal", "yaxshi": "Yaxshi", "o'rta": "O'rta", "orta": "O'rta"}
+    cond = cond_map.get(clean_cond.lower(), clean_cond.capitalize())
+
+    await state.update_data(condition=cond)
     await state.set_state(HaridStates.waiting_sell_price)
     await message.answer(
+        f"Holat: <b>{cond}</b>\n\n"
         "💰 <b>Kanalda ko'rsatiladigan sotuv narxini kiriting ($):</b>\n<i>(Masalan: 550)</i>",
         reply_markup=cancel_kb(),
     )
@@ -996,20 +1026,20 @@ async def imei_searched(message: types.Message, state: FSMContext):
 async def post_photo_skipped_cb(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     await state.update_data(phone_photo_file_id=None)
-    await state.set_state(ChannelPostStates.waiting_sell_price)
+    await state.set_state(ChannelPostStates.waiting_condition)
     await call.message.answer(
-        "💰 <b>Kanalda ko'rsatiladigan sotuv narxini kiriting ($):</b>\n<i>(Masalan: 600)</i>",
-        reply_markup=cancel_kb(),
+        "✨ <b>Telefon holatini tanlang:</b>",
+        reply_markup=condition_inline_kb("pcond"),
     )
 
 
 @router.message(ChannelPostStates.waiting_channel_photo, F.text.in_(["⏭ Tashlab ketish", "Tashlab ketish"]))
 async def post_photo_skipped(message: types.Message, state: FSMContext):
     await state.update_data(phone_photo_file_id=None)
-    await state.set_state(ChannelPostStates.waiting_sell_price)
+    await state.set_state(ChannelPostStates.waiting_condition)
     await message.answer(
-        "💰 <b>Kanalda ko'rsatiladigan sotuv narxini kiriting ($):</b>\n<i>(Masalan: 600)</i>",
-        reply_markup=cancel_kb(),
+        "✨ <b>Telefon holatini tanlang:</b>",
+        reply_markup=condition_inline_kb("pcond"),
     )
 
 
@@ -1017,8 +1047,37 @@ async def post_photo_skipped(message: types.Message, state: FSMContext):
 async def post_photo_received(message: types.Message, state: FSMContext, bot: Bot):
     photo = message.photo[-1]
     await state.update_data(phone_photo_file_id=photo.file_id)
+    await state.set_state(ChannelPostStates.waiting_condition)
+    await message.answer(
+        "✨ <b>Telefon holatini tanlang:</b>",
+        reply_markup=condition_inline_kb("pcond"),
+    )
+
+
+@router.callback_query(ChannelPostStates.waiting_condition, F.data.startswith("pcond:"))
+async def post_condition_cb(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
+    cond = call.data.split(":", 1)[1]
+    await state.update_data(condition=cond)
+    await state.set_state(ChannelPostStates.waiting_sell_price)
+    await call.message.answer(
+        f"Holat: <b>{cond}</b>\n\n"
+        "💰 <b>Kanalda ko'rsatiladigan sotuv narxini kiriting ($):</b>\n<i>(Masalan: 600)</i>",
+        reply_markup=cancel_kb(),
+    )
+
+
+@router.message(ChannelPostStates.waiting_condition, F.text)
+async def post_condition_text(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    clean_cond = text.replace("✨", "").replace("👍", "").replace("👌", "").strip()
+    cond_map = {"ideal": "Ideal", "yaxshi": "Yaxshi", "o'rta": "O'rta", "orta": "O'rta"}
+    cond = cond_map.get(clean_cond.lower(), clean_cond.capitalize())
+
+    await state.update_data(condition=cond)
     await state.set_state(ChannelPostStates.waiting_sell_price)
     await message.answer(
+        f"Holat: <b>{cond}</b>\n\n"
         "💰 <b>Kanalda ko'rsatiladigan sotuv narxini kiriting ($):</b>\n<i>(Masalan: 600)</i>",
         reply_markup=cancel_kb(),
     )

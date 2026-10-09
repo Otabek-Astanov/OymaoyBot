@@ -96,3 +96,14 @@ def post_channel_kb() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="🚫 Bekor qilish")],
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, is_persistent=True)
+
+
+def condition_inline_kb(prefix: str = "cond") -> InlineKeyboardMarkup:
+    kb = [
+        [
+            InlineKeyboardButton(text="✨ Ideal", callback_data=f"{prefix}:Ideal"),
+            InlineKeyboardButton(text="👍 Yaxshi", callback_data=f"{prefix}:Yaxshi"),
+            InlineKeyboardButton(text="👌 O'rta", callback_data=f"{prefix}:O'rta"),
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=kb)

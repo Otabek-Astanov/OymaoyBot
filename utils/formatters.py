@@ -27,7 +27,8 @@ def clean_val(v: Any) -> Optional[str]:
 
 
 OPTIONAL_TEMPLATE_KEYS = {
-    "memory", "xotira", "battery", "batareya", "color", "rang", "box", "karobka", "imei", "imei_6"
+    "memory", "xotira", "battery", "batareya", "color", "rang", "box", "karobka", "imei", "imei_6",
+    "condition", "holat", "holati"
 }
 
 
@@ -42,6 +43,7 @@ def render_channel_template(template: str, data: Dict[str, Any]) -> str:
     memory = clean_val(data.get("memory") or data.get("Xotira")) or ""
     color = clean_val(data.get("color") or data.get("Rang")) or ""
     box = clean_val(data.get("has_box") or data.get("Karobka")) or ""
+    condition = clean_val(data.get("condition") or data.get("holati") or data.get("holat")) or ""
 
     raw_battery = clean_val(data.get("battery") or data.get("Batareya %")) or ""
     battery_digits = raw_battery.replace("%", "").strip() if raw_battery else ""
@@ -69,6 +71,9 @@ def render_channel_template(template: str, data: Dict[str, Any]) -> str:
         "rang": color,
         "box": box,
         "karobka": box,
+        "condition": condition,
+        "holat": condition,
+        "holati": condition,
         "imei": raw_imei,
         "imei_6": raw_imei_6,
         "price": price_digits,
@@ -122,6 +127,29 @@ def render_channel_template(template: str, data: Dict[str, Any]) -> str:
         result_lines.append(new_line)
 
     text = "\n".join(result_lines)
+
+    # Agar shablonda {holati} kiritilmagan bo'lsa-yu, lekin telefon holati tanlangan bo'lsa:
+    if condition and not re.search(r"\{(?:condition|holat|holati)\}", template, flags=re.IGNORECASE):
+        cond_line = f"✨ Holati: <b>{condition}</b>"
+        lines_out = []
+        inserted = False
+        for l in text.splitlines():
+            lines_out.append(l)
+            if not inserted and ("karobka" in l.lower() or "📦" in l):
+                lines_out.append(cond_line)
+                inserted = True
+        if not inserted:
+            lines_out2 = []
+            for l in lines_out:
+                if not inserted and ("narx" in l.lower() or "💰" in l):
+                    lines_out2.append(cond_line)
+                    inserted = True
+                lines_out2.append(l)
+            if not inserted:
+                lines_out2.append(cond_line)
+            lines_out = lines_out2
+        text = "\n".join(lines_out)
+
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 

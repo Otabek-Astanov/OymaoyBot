@@ -20,6 +20,7 @@ class HaridStates(StatesGroup):
     confirm_purchase = State()
     ask_post_channel = State()
     waiting_channel_photo = State()
+    waiting_condition = State()
     waiting_sell_price = State()
 
 
@@ -27,6 +28,7 @@ class ChannelPostStates(StatesGroup):
     waiting_imei_search = State()
     confirm_found_phone = State()
     waiting_channel_photo = State()
+    waiting_condition = State()
     waiting_sell_price = State()
     confirm_post = State()
 
