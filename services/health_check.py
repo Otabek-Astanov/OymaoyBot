@@ -1,130 +1,215 @@
-import os
+"""Bounded, read-only readiness checks; never render raw provider errors."""
+
+import asyncio
 import logging
-from typing import Tuple, Dict, Any
+import time
+from pathlib import Path
+
 from aiogram import Bot
 from aiogram.enums import ChatMemberStatus
 
 import config
-from services.google_sheets import sheets_service
-from services.google_drive import drive_service
+from services.io_worker import io_worker
 
 logger = logging.getLogger(__name__)
 
 
 class SystemHealthChecker:
-    @staticmethod
-    async def run_diagnostics(bot: Bot) -> Tuple[bool, str, Dict[str, bool]]:
-        """
-        Tizimning barcha kerakli konfiguratsiyalarini tekshiradi.
-        Qaytaradi: (tayyormi: bool, hisobot_matni: str, statuslar_lugati)
-        """
-        results = {}
-        report_lines = ["🛠 <b>TIZIM SOZLAMALARI VA ULANISHLAR DIAGNOSTIKASI:</b>\n"]
+    def __init__(
+        self,
+        *,
+        sheets=None,
+        drive=None,
+        worker=None,
+        cache_seconds=30,
+        timeout_seconds=10,
+    ):
+        self.sheets = sheets
+        self.drive = drive
+        self.worker = worker or io_worker
+        self.cache_seconds = cache_seconds
+        self.timeout_seconds = timeout_seconds
+        self._cache = {}
+        self._bots_by_id = {}
 
-        # 1. Google Sheets Fayli
-        creds_exists = os.path.exists(config.GOOGLE_SERVICE_ACCOUNT_FILE)
-        results["creds_file"] = creds_exists
-        if creds_exists:
-            report_lines.append("✅ <b>Google Kalit:</b> <code>credentials.json</code> mavjud")
-        else:
-            report_lines.append("❌ <b>Google Kalit:</b> <code>credentials.json</code> fayli topilmadi")
+    def configure(self, *, bots_by_id):
+        self._bots_by_id = dict(bots_by_id)
+        self._cache.clear()
 
-        # 2. Spreadsheet ID va ulanishi
-        sheet_id_set = bool(config.SPREADSHEET_ID)
-        sheets_connected = sheets_service.is_connected()
-        results["sheets_connected"] = sheets_connected
-        if sheet_id_set and sheets_connected:
-            report_lines.append("✅ <b>Google Sheets Baza:</b> Ulangan va faol")
-        elif not sheet_id_set:
-            report_lines.append("❌ <b>Google Sheets Baza:</b> <code>SPREADSHEET_ID</code> kiritilmagan")
-        else:
-            report_lines.append("❌ <b>Google Sheets Baza:</b> Jadvalga ulanib bo'lmadi")
-
-        # 3. Google Drive
-        drive_connected = drive_service.is_connected()
-        results["drive_connected"] = drive_connected
-        if drive_connected:
-            report_lines.append("✅ <b>Google Drive:</b> Rasmlar ombori faol")
-        else:
-            report_lines.append("❌ <b>Google Drive:</b> Ulanmagan (rasmlar saqlanmaydi)")
-
-        # 4. Telegram Kanal
-        channel_set = bool(config.CHANNEL_ID)
-        channel_ok = False
-        if channel_set:
-            try:
-                # Agar joriy bot harajat boti bo'lsa va kanalda bo'lmasa, harid yoki sotuv boti orqali tekshiramiz
-                c_bot = bot
-                if bot.token == config.HARAJAT_BOT_TOKEN:
-                    c_bot = Bot(token=config.HARID_BOT_TOKEN)
-                chat = await c_bot.get_chat(config.CHANNEL_ID)
-                bot_member = await c_bot.get_chat_member(config.CHANNEL_ID, c_bot.id)
-                if bot_member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR]:
-                    channel_ok = True
-                    report_lines.append(f"✅ <b>Telegram Kanal:</b> @{chat.username or chat.title} (Bot admin)")
-                else:
-                    report_lines.append(f"⚠️ <b>Telegram Kanal:</b> Bot kanalda admin emas!")
-                if c_bot != bot:
-                    await c_bot.session.close()
-            except Exception as e:
-                report_lines.append(f"❌ <b>Telegram Kanal:</b> Ulanishda xato ({e})")
-        else:
-            report_lines.append("❌ <b>Telegram Kanal:</b> <code>CHANNEL_ID</code> kiritilmagan")
-        results["channel_ok"] = channel_ok
-
-        # 5. Harid Guruhi ("Sotib oldi")
-        harid_group_set = bool(config.GROUP_HARID_ID)
-        harid_group_ok = False
-        if harid_group_set:
-            try:
-                h_bot = bot if bot.token == config.HARID_BOT_TOKEN else Bot(token=config.HARID_BOT_TOKEN)
-                chat = await h_bot.get_chat(config.GROUP_HARID_ID)
-                harid_group_ok = True
-                report_lines.append(f"✅ <b>Harid guruhi:</b> {chat.title}")
-                if h_bot != bot:
-                    await h_bot.session.close()
-            except Exception as e:
-                report_lines.append(f"❌ <b>Harid guruhi:</b> Ulanishda xato ({e})")
-        else:
-            report_lines.append("❌ <b>Harid guruhi:</b> <code>GROUP_HARID_ID</code> kiritilmagan")
-        results["harid_group_ok"] = harid_group_ok
-
-        # 6. Sotuv Guruhi
-        sotuv_group_set = bool(config.GROUP_SOTUV_ID)
-        sotuv_group_ok = False
-        if sotuv_group_set:
-            try:
-                s_bot = bot if bot.token == config.SOTUV_BOT_TOKEN else Bot(token=config.SOTUV_BOT_TOKEN)
-                chat = await s_bot.get_chat(config.GROUP_SOTUV_ID)
-                sotuv_group_ok = True
-                report_lines.append(f"✅ <b>Sotuv guruhi:</b> {chat.title}")
-                if s_bot != bot:
-                    await s_bot.session.close()
-            except Exception as e:
-                report_lines.append(f"❌ <b>Sotuv guruhi:</b> Ulanishda xato ({e})")
-        else:
-            report_lines.append("❌ <b>Sotuv guruhi:</b> <code>GROUP_SOTUV_ID</code> kiritilmagan")
-        results["sotuv_group_ok"] = sotuv_group_ok
-
-        # 7. Adminlar ro'yxati
-        results["has_admins"] = bool(config.ADMIN_IDS)
-
-        # Asosiy holat: Google Sheets va kalit bo'lsa bot to'liq ishlay oladi
-        critical_passed = creds_exists and sheets_connected
-
-        report_lines.append("\n━━━━━━━━━━━━━━━━━━━━")
-        if critical_passed:
-            report_lines.append("🎉 <b>XULOSA: Google Sheets bazasi muvaffaqiyatli ulangan! Bot ishchi holatda.</b>")
-            if not (channel_ok and harid_group_ok and sotuv_group_ok):
-                report_lines.append("<i>💡 Eslatma: Kanal yoki guruh sozlanmagan bo'lsa, ma'lumotlar to'g'ridan-to'g'ri Google Sheets'ga yoziladi.</i>")
-        else:
-            report_lines.append(
-                "⚠️ <b>XULOSA: Google Sheets sozlanmagan!</b>\n"
-                "<i>Iltimos, credentials.json va SPREADSHEET_ID ni to'ldiring.</i>"
+    async def _google_ready(self, service) -> bool:
+        try:
+            result = await asyncio.wait_for(
+                self.worker.call(service.readiness), self.timeout_seconds
             )
+            return result is not False
+        except Exception as exc:
+            logger.warning("Readiness check failed: %s", type(exc).__name__)
+            return False
 
-        full_report = "\n".join(report_lines)
-        return critical_passed, full_report, results
+    async def _chat_ready(
+        self, current_bot, token, destination, *, channel=False, require_post=True
+    ) -> bool:
+        if not token or not destination:
+            return False
+        selected = (
+            current_bot
+            if current_bot.token == token
+            else next(
+                (bot for bot in self._bots_by_id.values() if bot.token == token),
+                None,
+            )
+        )
+        temporary = selected is None
+        selected = selected or Bot(token=token)
+        try:
+            await asyncio.wait_for(selected.get_chat(destination), self.timeout_seconds)
+            if channel:
+                member = await asyncio.wait_for(
+                    selected.get_chat_member(destination, selected.id),
+                    self.timeout_seconds,
+                )
+                if member.status == ChatMemberStatus.CREATOR:
+                    return True
+                return (
+                    member.status == ChatMemberStatus.ADMINISTRATOR
+                    and bool(member.can_edit_messages)
+                    and (not require_post or bool(member.can_post_messages))
+                )
+            member = await asyncio.wait_for(
+                selected.get_chat_member(destination, selected.id), self.timeout_seconds
+            )
+            if member.status in {ChatMemberStatus.LEFT, ChatMemberStatus.KICKED}:
+                return False
+            return member.status != ChatMemberStatus.RESTRICTED or bool(
+                member.can_send_messages
+            )
+        except Exception as exc:
+            logger.warning("Telegram readiness check failed: %s", type(exc).__name__)
+            return False
+        finally:
+            if temporary:
+                await selected.session.close()
+
+    async def run_diagnostics(self, bot, *, features=None, caller_id=None):
+        # Navigation verifies sheet-based Admin roles. An explicitly supplied
+        # caller ID is restricted to bootstrap ADMIN_IDS for standalone usage.
+        if caller_id is not None and caller_id not in config.ADMIN_IDS:
+            return False, "Diagnostikani ko'rish uchun admin ruxsati kerak.", {}
+        features = tuple(
+            features
+            or (
+                feature
+                for feature in config.FEATURES
+                if getattr(config, feature.upper() + "_BOT_TOKEN") == bot.token
+            )
+        )
+        key = (bot.id, features)
+        cached = self._cache.get(key)
+        if cached and time.monotonic() - cached[0] < self.cache_seconds:
+            return cached[1]
+        if self.sheets is None:
+            from services.google_sheets import sheets_service
+
+            self.sheets = sheets_service
+        if self.drive is None:
+            from services.google_drive import drive_service
+
+            self.drive = drive_service
+        results = {
+            "creds_file": Path(config.GOOGLE_SERVICE_ACCOUNT_FILE).is_file(),
+            "sheets_connected": await self._google_ready(self.sheets),
+            "drive_connected": True,
+            "has_admins": bool(config.ADMIN_IDS),
+        }
+        lines = ["<b>Tizim holati</b>"]
+        lines.append(
+            "✅ Google Sheets schema o'qildi."
+            if results["sheets_connected"]
+            else "❌ Google Sheets schema yoki ulanish tekshiruvi o'tmadi."
+        )
+        if config.DRIVE_FOLDER_ID:
+            results["drive_connected"] = await self._google_ready(self.drive)
+            lines.append(
+                "✅ Drive papkasi ochildi."
+                if results["drive_connected"]
+                else "❌ Drive papkasi yoki ruxsati tekshirilmadi."
+            )
+        else:
+            lines.append("Drive papkasi sozlanmagan; Drive yuklash o'chirilgan.")
+        destinations = []
+        if "harid" in features:
+            destinations.extend(
+                [
+                    (
+                        "channel_ok",
+                        "Kanal",
+                        config.HARID_BOT_TOKEN,
+                        config.CHANNEL_ID,
+                        True,
+                        True,
+                    ),
+                    (
+                        "harid_group_ok",
+                        "Xarid guruhi",
+                        config.HARID_BOT_TOKEN,
+                        config.GROUP_HARID_ID,
+                        False,
+                        False,
+                    ),
+                ]
+            )
+        if "sotuv" in features:
+            destinations.append(
+                (
+                    "sotuv_group_ok",
+                    "Sotuv guruhi",
+                    config.SOTUV_BOT_TOKEN,
+                    config.GROUP_SOTUV_ID,
+                    False,
+                    False,
+                )
+            )
+            if "harid" not in features:
+                # Sold edits use the original purchase bot where available.
+                destinations.append(
+                    (
+                        "channel_ok",
+                        "Kanal tahriri",
+                        config.HARID_BOT_TOKEN or config.SOTUV_BOT_TOKEN,
+                        config.CHANNEL_ID,
+                        True,
+                        False,
+                    )
+                )
+        for flag, name, token, destination, is_channel, require_post in destinations:
+            if destination:
+                results[flag] = await self._chat_ready(
+                    bot,
+                    token,
+                    destination,
+                    channel=is_channel,
+                    require_post=require_post,
+                )
+                lines.append(
+                    ("✅ " if results[flag] else "❌ ") + name + " ruxsati tekshirildi."
+                )
+            else:
+                results[flag] = True
+                lines.append(name + " sozlanmagan; ushbu bildirish o'chirilgan.")
+        critical = (
+            results["creds_file"]
+            and results["sheets_connected"]
+            and results["drive_connected"]
+        )
+        ready = critical and all(results[flag] for flag, *_ in destinations)
+        lines.append(
+            "Tizim tayyor."
+            if ready
+            else "Tizim tekshiruvlari to'liq o'tmadi; yozuvlar tayyorlik talabiga bo'ysunadi."
+        )
+        result = (ready, "\n".join(lines), results)
+        self._cache[key] = (time.monotonic(), result)
+        return result
 
 
 health_checker = SystemHealthChecker()

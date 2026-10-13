@@ -1,133 +1,236 @@
+"""Drive access initialized explicitly in the application's single I/O worker."""
+
 import logging
 import os
-import shutil
+import tempfile
 from pathlib import Path
-from typing import Optional, Tuple
 
-try:
-    from google.oauth2.service_account import Credentials as ServiceAccountCredentials
-    from google.oauth2.credentials import Credentials as UserCredentials
-    from google.auth.transport.requests import Request
-    from googleapiclient.discovery import build
-    from googleapiclient.http import MediaFileUpload
-except ImportError:
-    ServiceAccountCredentials = None
-    UserCredentials = None
-    Request = None
-    build = None
-    MediaFileUpload = None
+from google.oauth2.credentials import Credentials as UserCredentials
+from google.oauth2.service_account import Credentials as ServiceAccountCredentials
+from google_auth_httplib2 import AuthorizedHttp, Request
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from httplib2 import Http
 
 import config
 
 logger = logging.getLogger(__name__)
+SCOPES = ["https://www.googleapis.com/auth/drive"]
+_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 
-SCOPES = [
-    "https://www.googleapis.com/auth/drive.file",
-    "https://www.googleapis.com/auth/drive",
-]
+
+class DriveUnavailable(RuntimeError):
+    """The upload has not been confirmed; no usable URL should be recorded."""
 
 
 class GoogleDriveService:
     def __init__(self):
         self.service = None
-        self.token_file = config.BASE_DIR / "token.json"
-        self._init_service()
+        self._token_file = None
 
-    def _init_service(self):
-        if not build:
-            logger.warning("googleapiclient o'rnatilmagan.")
-            return
+    @property
+    def token_file(self) -> Path:
+        # Configuration is loaded explicitly after module imports. An injected
+        # token path stays available for isolated tests and tooling.
+        return self._token_file or Path(config.GOOGLE_OAUTH_TOKEN_FILE)
 
+    @token_file.setter
+    def token_file(self, path):
+        self._token_file = Path(path)
+
+    def initialize(self) -> bool:
+        if self.service is None:
+            self._init_service()
+        return self.is_connected()
+
+    def _init_service(self) -> None:
+        self.service = None
         try:
-            # 1. Avval User OAuth (token.json) tekshiriladi (agar foydalanuvchi ruxsat bergan bo'lsa)
-            if self.token_file.exists() and UserCredentials:
-                creds = UserCredentials.from_authorized_user_file(str(self.token_file), SCOPES)
-                if creds and creds.expired and creds.refresh_token and Request:
-                    try:
-                        creds.refresh(Request())
-                        with open(self.token_file, "w") as tf:
-                            tf.write(creds.to_json())
-                    except Exception as re:
-                        logger.warning(f"OAuth token yangilashda xato: {re}")
-                self.service = build("drive", "v3", credentials=creds)
-                logger.info("Google Drive xizmati User OAuth orqali muvaffaqiyatli ulandi.")
-                return
-
-            # 2. Aks holda Service Account orqali ulanish
-            if os.path.exists(config.GOOGLE_SERVICE_ACCOUNT_FILE) and ServiceAccountCredentials:
-                creds = ServiceAccountCredentials.from_service_account_file(
-                    config.GOOGLE_SERVICE_ACCOUNT_FILE, scopes=SCOPES
+            http = Http(timeout=min(30, max(1, config.IO_TIMEOUT_SECONDS)))
+            if self.token_file.exists():
+                credentials = UserCredentials.from_authorized_user_file(
+                    str(self.token_file), SCOPES
                 )
-                self.service = build("drive", "v3", credentials=creds)
-                logger.info("Google Drive xizmati Service Account orqali ulandi.")
+                if credentials.expired:
+                    if not credentials.refresh_token:
+                        raise DriveUnavailable(
+                            "OAuth token uchun qayta avtorizatsiya kerak"
+                        )
+                    credentials.refresh(Request(http))
+                    if not credentials.valid:
+                        raise DriveUnavailable("OAuth token yangilanmadi")
+                    self._persist_token(credentials.to_json())
+                if not credentials.valid:
+                    raise DriveUnavailable("OAuth token haqiqiy emas")
+            elif Path(config.GOOGLE_SERVICE_ACCOUNT_FILE).is_file():
+                credentials = ServiceAccountCredentials.from_service_account_file(
+                    config.GOOGLE_SERVICE_ACCOUNT_FILE,
+                    scopes=SCOPES,
+                )
             else:
-                logger.warning(f"Google Drive: {config.GOOGLE_SERVICE_ACCOUNT_FILE} topilmadi.")
-        except Exception as e:
-            logger.warning(f"Google Drive ulanishida ogohlantirish: {e}")
+                return
+            self.service = build(
+                "drive",
+                "v3",
+                http=AuthorizedHttp(credentials, http=http),
+                cache_discovery=False,
+                num_retries=0,
+            )
+        except Exception as exc:
+            # OAuth/API exception text may contain private identifiers or tokens.
+            logger.warning(
+                "Google Drive initialization failed (%s)", type(exc).__name__
+            )
+
+    def _persist_token(self, contents: str) -> None:
+        """Replace the refresh token atomically; interrupted writes keep the old file."""
+        self.token_file.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self.token_file.parent,
+                prefix=".token-",
+                delete=False,
+            ) as temp:
+                temp_path = Path(temp.name)
+                os.chmod(temp.name, 0o600)
+                temp.write(contents)
+                temp.flush()
+                os.fsync(temp.fileno())
+            os.replace(temp_path, self.token_file)
+            temp_path = None
+            # Persist the rename too where the host filesystem supports it.
+            descriptor = os.open(self.token_file.parent, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
 
     def is_connected(self) -> bool:
         return self.service is not None
 
-    def _get_formula_sep(self) -> str:
-        try:
-            from services.google_sheets import sheets_service
-            return sheets_service.formula_sep
-        except Exception:
-            return ";"
-
-    def upload_photo(self, local_path: str, file_name: str) -> Tuple[str, str, str]:
-        """
-        Rasmni Google Drive'ga yuklaydi.
-        Agar Google Drive ulanmagan yoki DRIVE_FOLDER_ID bo'lmasa, lokalda saqlanmaydi va bo'sh qiymat qaytaradi.
-        Qaytaradi: (web_view_link, direct_image_link, sheet_formula)
-        """
-        if not self.service or not config.DRIVE_FOLDER_ID:
-            logger.info("Google Drive sozlanmagan, rasm yuklanmadi.")
-            return "", "", ""
-
-        if not local_path or not os.path.exists(local_path):
-            logger.warning(f"Yuklash uchun rasm fayli topilmadi: {local_path}")
-            return "", "", ""
-
-        try:
-            file_metadata = {
-                "name": file_name,
-                "parents": [config.DRIVE_FOLDER_ID],
+    def _assert_private_access(self, file_id: str) -> None:
+        page_token = None
+        seen_tokens = set()
+        while True:
+            arguments = {
+                "fileId": file_id,
+                "supportsAllDrives": True,
+                "fields": "permissions(type,role),nextPageToken",
+                "pageSize": 100,
             }
-            media = MediaFileUpload(local_path, mimetype="image/jpeg", resumable=True)
-            file = (
+            if page_token:
+                arguments["pageToken"] = page_token
+            result = self.service.permissions().list(**arguments).execute()
+            if not isinstance(result, dict) or not isinstance(
+                result.get("permissions"), list
+            ):
+                raise DriveUnavailable("Drive ruxsatlari tekshirilmadi")
+            if any(
+                permission.get("type") == "anyone"
+                for permission in result["permissions"]
+            ):
+                raise DriveUnavailable(
+                    "IMEI rasmi uchun cheklangan Drive papkasi kerak"
+                )
+            page_token = result.get("nextPageToken")
+            if not page_token:
+                return
+            if page_token in seen_tokens:
+                raise DriveUnavailable("Drive ruxsat sahifalari tekshirilmadi")
+            seen_tokens.add(page_token)
+
+    def readiness(self) -> bool:
+        if not self.service or not config.DRIVE_FOLDER_ID:
+            return False
+        try:
+            folder = (
                 self.service.files()
-                .create(
-                    body=file_metadata,
-                    media_body=media,
-                    fields="id, webViewLink, webContentLink",
+                .get(
+                    fileId=config.DRIVE_FOLDER_ID,
+                    fields="id,mimeType,trashed",
                     supportsAllDrives=True,
                 )
                 .execute()
             )
-            file_id = file.get("id")
+            if folder.get("mimeType") != _FOLDER_MIME_TYPE or folder.get(
+                "trashed", False
+            ):
+                return False
+            self._assert_private_access(config.DRIVE_FOLDER_ID)
+            return True
+        except Exception as exc:
+            logger.warning("Google Drive folder read failed (%s)", type(exc).__name__)
+            return False
 
-            # Faylga hamma ko'rishi uchun ruxsat berish
-            try:
+    def upload_photo(
+        self, local_path: str, file_name: str, *, public: bool = False
+    ) -> tuple[str, str, str]:
+        """Upload a private record photo; public access requires explicit opt-in.
+
+        Returns (authorized-user view URL, public image URL or empty, trusted
+        HYPERLINK formula). An IMEI receipt must always keep ``public=False``.
+        Calling code must run this method through the shared I/O worker.
+        """
+        if not self.service or not config.DRIVE_FOLDER_ID:
+            raise DriveUnavailable("Google Drive rasm saqlash uchun tayyor emas")
+        if not local_path or not Path(local_path).is_file():
+            raise DriveUnavailable("Rasm fayli topilmadi")
+        try:
+            if not public:
+                self._assert_private_access(config.DRIVE_FOLDER_ID)
+            media = MediaFileUpload(local_path, mimetype="image/jpeg", resumable=True)
+            uploaded = (
+                self.service.files()
+                .create(
+                    body={"name": file_name, "parents": [config.DRIVE_FOLDER_ID]},
+                    media_body=media,
+                    fields="id,webViewLink",
+                    supportsAllDrives=True,
+                )
+                .execute()
+            )
+            file_id = uploaded.get("id")
+            if not file_id:
+                raise DriveUnavailable("Google Drive fayl ID sini qaytarmadi")
+            if not public:
+                self._assert_private_access(file_id)
+            if public:
+                # Never claim a public URL if permission creation is rejected.
                 self.service.permissions().create(
                     fileId=file_id,
                     body={"type": "anyone", "role": "reader"},
                     supportsAllDrives=True,
                 ).execute()
-            except Exception as pe:
-                logger.warning(f"Ruxsat berishda ogohlantirish: {pe}")
+            view_link = (
+                uploaded.get("webViewLink")
+                or f"https://drive.google.com/file/d/{file_id}/view"
+            )
+            direct_link = (
+                f"https://drive.google.com/uc?export=view&id={file_id}"
+                if public
+                else ""
+            )
+            label = ("📷 " + str(file_name)).replace('"', '""')
+            formula_url = view_link.replace('"', '""')
+            # A formula belongs to the trusted formula cell API, never user text.
+            separator = getattr(config, "SHEET_FORMULA_SEPARATOR", ";")
+            if separator not in {",", ";"}:
+                raise DriveUnavailable("Formula ajratgichi noto'g'ri")
+            formula = f'=HYPERLINK("{formula_url}"{separator}"{label}")'
+            return view_link, direct_link, formula
+        except DriveUnavailable:
+            raise
+        except Exception as exc:
+            logger.error("Google Drive upload failed (%s)", type(exc).__name__)
+            raise DriveUnavailable(
+                "Google Drive rasmni saqlashni tasdiqlamadi"
+            ) from exc
 
-            view_link = file.get("webViewLink", f"https://drive.google.com/file/d/{file_id}/view")
-            direct_image_link = f"https://drive.google.com/uc?export=view&id={file_id}"
-            # Google Sheets katagi uchun formula: bosilganda Drive'da ochiladigan havola
-            sep = self._get_formula_sep()
-            sheet_formula = f'=HYPERLINK("{view_link}"{sep} "📷 {file_name}")'
-            return view_link, direct_image_link, sheet_formula
 
-        except Exception as e:
-            logger.error(f"Google Drive'ga rasm yuklashda xatolik: {e}")
-            return "", "", ""
-
-
-# Singleton instansiya
 drive_service = GoogleDriveService()

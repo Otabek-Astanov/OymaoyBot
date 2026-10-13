@@ -1,14 +1,50 @@
 services:
   bot:
     build: .
-    container_name: oymaoy_bot
     restart: unless-stopped
-    volumes:
-      - .:/app
-      - ./media:/app/media
-      - ./.env:/app/.env:ro
-      - ./credentials.json:/app/credentials.json:ro
-      - ./token.json:/app/token.json
+    init: true
+    read_only: true
+    user: "10001:10001"
+    stop_grace_period: 90s
+    env_file:
+      - .env
     environment:
-      - PYTHONUNBUFFERED=1
-      - TZ=Asia/Tashkent
+      PYTHONUNBUFFERED: "1"
+      TZ: Asia/Samarkand
+      GOOGLE_SERVICE_ACCOUNT_FILE: /app/secrets/credentials.json
+      GOOGLE_OAUTH_TOKEN_FILE: /app/data/token.json
+      DRIVE_TOKEN_FILE: /app/data/token.json
+      OPERATION_DB_PATH: /app/data/operations.sqlite
+      MEDIA_DIR: /app/media
+      FSM_STORAGE_URL: redis://redis:6379/0
+    volumes:
+      - bot_data:/app/data
+      - bot_media:/app/media
+      - ./credentials.json:/app/secrets/credentials.json:ro
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=64m
+    depends_on:
+      redis:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: [redis-server, --appendonly, "yes", --appendfsync, "always"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  bot_data:
+  bot_media:
+  redis_data:

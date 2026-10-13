@@ -6,6 +6,9 @@ from aiogram.types import (
 )
 from typing import List, Dict, Any
 
+from bot_common.callbacks import callback_data, callback_key, staff_id
+from utils.money import money_value
+
 
 def hisobchi_menu_kb() -> ReplyKeyboardMarkup:
     kb = [
@@ -38,7 +41,9 @@ def skip_or_cancel_kb(placeholder: str = None) -> ReplyKeyboardMarkup:
 
 def skip_inline_kb(callback_data: str = "skip") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="⏭ Tashlab ketish", callback_data=callback_data)]]
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⏭ Tashlab ketish", callback_data=callback_data)]
+        ]
     )
 
 
@@ -76,32 +81,41 @@ def kirim_categories_kb() -> InlineKeyboardMarkup:
 def rahbariyat_persons_kb(prefix: str = "rahb") -> InlineKeyboardMarkup:
     kb = [
         [
-            InlineKeyboardButton(text="👤 Abduqayum", callback_data=f"{prefix}:Abduqayum"),
-            InlineKeyboardButton(text="💼 Investor", callback_data=f"{prefix}:Investor"),
+            InlineKeyboardButton(
+                text="👤 Abduqayum", callback_data=f"{prefix}:Abduqayum"
+            ),
+            InlineKeyboardButton(
+                text="💼 Investor", callback_data=f"{prefix}:Investor"
+            ),
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 def format_money_label(val: Any) -> str:
-    """Format money cleanly for buttons: e.g. '$990.00' or 990 -> '$990' or '$990.50'."""
-    clean = str(val or "0").replace("$", "").replace(",", "").strip()
-    try:
-        f = float(clean)
-        if f.is_integer():
-            return f"${int(f):,}"
-        return f"${f:,.2f}"
-    except (ValueError, TypeError):
-        return f"${clean}" if clean else "$0"
+    """A malformed sheet cell is an error, never an invented zero balance."""
+    amount = money_value(val, signed=True)
+    return (
+        f"${amount:,.0f}" if amount == amount.to_integral_value() else f"${amount:,.2f}"
+    )
 
 
-def partners_inline_kb(partners: List[Dict[str, Any]], prefix: str = "partner_inc") -> InlineKeyboardMarkup:
+def partners_inline_kb(
+    partners: List[Dict[str, Any]], prefix: str = "partner_inc"
+) -> InlineKeyboardMarkup:
     kb = []
     for p in partners:
-        name = p.get("Hamkor nomi", "").strip()
+        name = str(p.get("Hamkor nomi", "")).strip()
         debt = p.get("Hozirgi qarzdorlik ($)", "0")
         if name and name.lower() not in ["dokondan", "do'kondan"]:
-            kb.append([InlineKeyboardButton(text=f"🤝 {name} ({format_money_label(debt)})", callback_data=f"{prefix}:{name}")])
+            kb.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"🤝 {name} ({format_money_label(debt)})",
+                        callback_data=callback_data(prefix, callback_key(name)),
+                    )
+                ]
+            )
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
@@ -110,8 +124,19 @@ def staff_inline_kb(staff_list: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
     for s in staff_list:
         name = str(s.get("F.I.Sh", s.get("Xodim ismi", ""))).strip()
         kpi = s.get("Qoldiq KPI ($)", "0")
+        try:
+            tg_id = staff_id(s.get("Telegram ID", ""))
+        except ValueError:
+            continue
         if name:
-            kb.append([InlineKeyboardButton(text=f"👨‍💼 {name} ({format_money_label(kpi)})", callback_data=f"staff:{name}")])
+            kb.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"👨‍💼 {name} ({format_money_label(kpi)})",
+                        callback_data=callback_data("staff", tg_id),
+                    )
+                ]
+            )
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 

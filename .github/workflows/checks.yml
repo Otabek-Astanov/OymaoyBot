@@ -1,0 +1,26 @@
+name: Offline regression checks
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - run: python -m pip install --require-hashes -r requirements.lock
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pytest tests -q
+      - run: python -m ruff check .
+      - run: python -m pip check
+      - name: Validate production Compose without real secrets
+        run: |
+          cp .env.example .env
+          printf '{}\n' > credentials.json
+          docker compose config --quiet
+      - run: docker compose build

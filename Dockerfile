@@ -1,21 +1,16 @@
 FROM python:3.12-slim
 
-WORKDIR /app
-
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libjpeg-dev \
-    zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements.lock .
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock \
+    && groupadd --gid 10001 bot \
+    && useradd --uid 10001 --gid bot --no-create-home --shell /usr/sbin/nologin bot
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-RUN mkdir -p media
-
+COPY --chown=root:root . .
+RUN mkdir -p /app/data /app/media /app/secrets \
+    && chown -R bot:bot /app/data /app/media
+USER 10001:10001
 CMD ["python", "run_all.py"]

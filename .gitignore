@@ -37,6 +37,18 @@ logs/
 media/*
 !media/.gitkeep
 
+# Persistent operation journal and SQLite sidecars
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite.lock
+*.db
+*.db-wal
+*.db-shm
+.pytest_cache/
+.ruff_cache/
+
 # IDEs and OS
 .DS_Store
 .idea/

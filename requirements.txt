@@ -1,10 +1,11 @@
-aiogram>=3.17.0
-python-dotenv>=1.0.1
-pydantic-settings>=2.0.0
-gspread>=6.1.4
-google-auth>=2.37.0
-google-auth-oauthlib>=1.2.0
-google-auth-httplib2>=0.2.0
-google-api-python-client>=2.159.0
-pillow>=11.1.0
-aiofiles>=24.1.0
+# Direct production dependencies; requirements.lock includes transitives and hashes.
+aiogram==3.31.0
+python-dotenv==1.2.3
+gspread==6.2.1
+google-auth==2.58.0
+google-auth-oauthlib==1.4.1
+google-auth-httplib2==0.4.2
+google-api-python-client==2.200.0
+pillow==12.3.0
+aiofiles==25.1.0
+redis==8.1.0

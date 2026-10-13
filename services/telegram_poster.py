@@ -1,240 +1,293 @@
-import os
-import re
+"""Telegram delivery only; monetary operations are never retried here."""
+
 import logging
-from typing import Optional, Dict, Any
+from pathlib import Path
+from typing import Any
+
 from aiogram import Bot
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
-from aiogram.types import FSInputFile
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
+from aiogram.types import FSInputFile, InputMediaPhoto
 
 import config
-from services.google_sheets import sheets_service
-from utils.formatters import build_channel_caption, build_buy_group_caption
+from utils.formatters import (
+    build_buy_group_caption,
+    build_channel_caption,
+    build_sell_group_caption,
+    extract_drive_file_id as extract_drive_file_id,
+    prepare_telegram_text,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def extract_drive_file_id(photo_field: Any) -> str:
-    """Google Sheets'dagi formula yoki URL ichidan Google Drive file_id ni ajratib oladi."""
-    if not photo_field:
-        return ""
-    text = str(photo_field)
-    match = re.search(r'/d/([a-zA-Z0-9_-]{25,})', text)
-    if match:
-        return match.group(1)
-    match = re.search(r'id=([a-zA-Z0-9_-]{25,})', text)
-    if match:
-        return match.group(1)
-    return ""
+class NotificationDeliveryError(RuntimeError):
+    def __init__(self, reason: str, *, retryable: bool = False, retry_after: float = 0):
+        super().__init__(reason)
+        self.retryable = retryable
+        self.retry_after = retry_after
 
 
 class TelegramPosterService:
-    @staticmethod
-    async def post_to_channel(bot: Bot, phone_data: Dict[str, Any], photo_path: Optional[str] = None) -> Optional[int]:
-        """
-        Telegram kanaliga e'lon joylaydi va message_id qaytaradi.
-        """
-        if not config.CHANNEL_ID:
-            logger.warning("CHANNEL_ID sozlanmagan, e'lon kanalga yuborilmadi.")
-            return None
+    def __init__(self):
+        self._io_worker = None
+        self._sheets_service = None
+        self._bots_by_id: dict[int, Bot] = {}
 
-        caption = build_channel_caption(phone_data, is_sold=False)
+    def configure(
+        self, io_worker, sheets_service, *, bots_by_id: dict[int, Bot] | None = None
+    ) -> None:
+        self._io_worker = io_worker
+        self._sheets_service = sheets_service
+        self._bots_by_id = dict(bots_by_id or {})
 
+    async def _channel_caption(
+        self, data: dict[str, Any], *, sold: bool = False
+    ) -> str:
+        if self._io_worker is None or self._sheets_service is None:
+            raise NotificationDeliveryError(
+                "Telegram poster is not configured", retryable=True
+            )
         try:
-            if not photo_path:
-                sent_msg = await bot.send_message(
-                    chat_id=config.CHANNEL_ID,
-                    text=caption,
+            template = await self._io_worker.call(
+                self._sheets_service.get_template, "Elon"
+            )
+            sold_template = None
+            if sold:
+                sold_template = await self._io_worker.call(
+                    self._sheets_service.get_template, "Sotildi"
                 )
-                logger.info(f"Kanalga matnli post joylandi! Message ID: {sent_msg.message_id}")
-                return sent_msg.message_id
-
-            if isinstance(photo_path, str) and len(photo_path) < 255 and os.path.exists(photo_path):
-                photo = FSInputFile(photo_path)
-            else:
-                photo = photo_path
-
-            sent_msg = await bot.send_photo(
-                chat_id=config.CHANNEL_ID,
-                photo=photo,
-                caption=caption,
+            return build_channel_caption(
+                data, sold, template=template, sold_template=sold_template
             )
-            logger.info(f"Kanalga rasmli post joylandi! Message ID: {sent_msg.message_id}")
-            return sent_msg.message_id
-        except Exception as e:
-            logger.error(f"Kanalga post joylashda xatolik: {e}")
-            return None
+        except NotificationDeliveryError:
+            raise
+        except Exception as exc:
+            raise NotificationDeliveryError(
+                "Channel template could not be read", retryable=True
+            ) from exc
 
     @staticmethod
-    async def post_to_buy_group(bot: Bot, phone_data: Dict[str, Any], imei_photo_path: Optional[str] = None) -> Optional[int]:
-        """
-        'Sotib oldi' guruhiga harid hisobotini rasm bilan (yoki rasmsiz) yuboradi.
-        """
-        if not config.GROUP_HARID_ID:
-            logger.warning("GROUP_HARID_ID sozlanmagan.")
-            return None
+    def _photo(photo: str | FSInputFile):
+        if isinstance(photo, str) and len(photo) < 255 and Path(photo).is_file():
+            return FSInputFile(photo)
+        return photo
 
-        caption = build_buy_group_caption(phone_data)
+    @staticmethod
+    def _failure(exc: Exception, *, raise_errors: bool):
+        logger.warning("Telegram delivery failed (%s)", type(exc).__name__)
+        if raise_errors:
+            if isinstance(exc, NotificationDeliveryError):
+                raise exc
+            if isinstance(exc, TelegramRetryAfter):
+                # Telegram's 429 response definitively rejected this request.
+                raise NotificationDeliveryError(
+                    "Telegram rate limit",
+                    retryable=True,
+                    retry_after=exc.retry_after,
+                ) from exc
+            raise NotificationDeliveryError(type(exc).__name__) from exc
+        return None
 
+    async def _send(
+        self,
+        bot: Bot,
+        chat_id: str | int,
+        caption: str,
+        photo=None,
+        *,
+        raise_errors: bool = False,
+    ) -> int | None:
+        if not chat_id:
+            return self._failure(
+                NotificationDeliveryError("Destination chat is not configured"),
+                raise_errors=raise_errors,
+            )
         try:
-            if not imei_photo_path:
-                sent_msg = await bot.send_message(
-                    chat_id=config.GROUP_HARID_ID,
-                    text=caption,
+            text, parse_mode = prepare_telegram_text(caption, 1024 if photo else 4096)
+            if photo:
+                message = await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=self._photo(photo),
+                    caption=text,
+                    parse_mode=parse_mode,
                 )
-                return sent_msg.message_id
-
-            if isinstance(imei_photo_path, str) and len(imei_photo_path) < 255 and os.path.exists(imei_photo_path):
-                photo = FSInputFile(imei_photo_path)
             else:
-                photo = imei_photo_path
+                message = await bot.send_message(
+                    chat_id=chat_id, text=text, parse_mode=parse_mode
+                )
+            message_id = getattr(message, "message_id", None)
+            if (
+                isinstance(message_id, bool)
+                or not isinstance(message_id, int)
+                or message_id <= 0
+            ):
+                raise NotificationDeliveryError(
+                    "Telegram returned no message acknowledgement"
+                )
+            return message_id
+        except Exception as exc:
+            return self._failure(exc, raise_errors=raise_errors)
 
-            sent_msg = await bot.send_photo(
-                chat_id=config.GROUP_HARID_ID,
-                photo=photo,
-                caption=caption,
-            )
-            return sent_msg.message_id
-        except Exception as e:
-            logger.error(f"Harid guruhiga yuborishda xatolik: {e}")
-            return None
-
-    @staticmethod
-    async def post_to_sell_group(bot: Bot, sale_data: Dict[str, Any]) -> Optional[int]:
-        """
-        'Sotuv' guruhiga sotilgan telefon hisobotini yuboradi.
-        """
-        if not config.GROUP_SOTUV_ID:
-            logger.warning("GROUP_SOTUV_ID sozlanmagan.")
-            return None
-
-        text = (
-            "🎉 <b>YANGI SOTUV AMALGA OSHIRILDI!</b>\n\n"
-            f"📱 Model: <b>{sale_data.get('model', 'Model')}</b>\n"
-            f"🔍 IMEI / Seriya: <code>{sale_data.get('imei', sale_data.get('imei_6'))}</code>\n"
-            f"💰 Sotuv narxi: <b>{sale_data.get('sell_price')}$</b>\n\n"
-            f"👤 Xaridor: <b>{sale_data.get('buyer_name')}</b>\n"
-            f"📞 Xaridor tel: <b>{sale_data.get('buyer_phone')}</b>\n"
-            f"💳 To'lov turi: <b>{sale_data.get('payment_type')}</b>\n"
-        )
-        if sale_data.get("payment_type") == "Qarz":
-            text += (
-                f"🤝 Hamkor: <b>{sale_data.get('partner_name')}</b>\n"
-                f"💵 Boshlang'ich to'lov: <b>{sale_data.get('initial_payment')}$</b>\n"
-                f"📉 Hamkor qarzi: <b>{sale_data.get('partner_debt')}$</b>\n"
-            )
-
-        sellers = sale_data.get("sellers")
-        if sellers and isinstance(sellers, list) and len(sellers) > 1:
-            seller_details = "\n".join([f"{s.get('name', 'Xodim')}: {s.get('kpi', 0)}$" for s in sellers])
-            text += (
-                f"\n🎁 Jami KPI: <b>{sale_data.get('seller_kpi')}$</b>\n"
-                f"{seller_details}\n"
-                f"👨‍💼 Sotuvchilar: <b>{sale_data.get('seller_name')}</b>"
-            )
-        else:
-            text += (
-                f"\n🎁 Sotuvchi KPI: <b>{sale_data.get('seller_kpi')}$</b>\n"
-                f"👨‍💼 Sotuvchi: <b>{sale_data.get('seller_name')}</b>"
-            )
-
-        phone_data = sale_data.get("phone_data", {}) if isinstance(sale_data.get("phone_data"), dict) else {}
-        photo_field = (
-            sale_data.get("phone_photo_url")
-            or phone_data.get("Telefon rasmi")
-            or phone_data.get("phone_photo_url")
-            or sale_data.get("imei_photo_url")
-            or phone_data.get("IMEI rasmi")
-            or phone_data.get("imei_photo_url")
-        )
-        drive_id = extract_drive_file_id(photo_field)
-
+    async def post_to_channel(
+        self,
+        bot: Bot,
+        phone_data: dict[str, Any],
+        photo_path=None,
+        *,
+        raise_errors: bool = False,
+    ) -> int | None:
         try:
-            if drive_id:
-                try:
-                    photo_url = f"https://lh3.googleusercontent.com/d/{drive_id}"
-                    sent_msg = await bot.send_photo(
-                        chat_id=config.GROUP_SOTUV_ID,
-                        photo=photo_url,
-                        caption=text,
-                    )
-                    logger.info(f"Sotuv guruhiga rasm bilan xabar yuborildi! Msg ID: {sent_msg.message_id}")
-                    return sent_msg.message_id
-                except Exception as pe:
-                    logger.warning(f"Sotuv guruhiga rasm bilan yuborishda ogohlantirish ({pe}), matn shaklida yuboriladi.")
+            caption = await self._channel_caption(phone_data)
+        except Exception as exc:
+            return self._failure(exc, raise_errors=raise_errors)
+        return await self._send(
+            bot, config.CHANNEL_ID, caption, photo_path, raise_errors=raise_errors
+        )
 
-            sent_msg = await bot.send_message(
-                chat_id=config.GROUP_SOTUV_ID,
-                text=text,
-            )
-            return sent_msg.message_id
-        except Exception as e:
-            logger.error(f"Sotuv guruhiga yuborishda xatolik: {e}")
-            return None
+    async def post_to_buy_group(
+        self,
+        bot: Bot,
+        phone_data: dict[str, Any],
+        imei_photo_path=None,
+        *,
+        raise_errors: bool = False,
+    ) -> int | None:
+        return await self._send(
+            bot,
+            config.GROUP_HARID_ID,
+            build_buy_group_caption(phone_data),
+            imei_photo_path,
+            raise_errors=raise_errors,
+        )
 
-    @staticmethod
-    async def mark_as_sold_on_channel(
-        bot: Bot, channel_post_id: int, phone_data: Optional[Dict[str, Any]] = None
-    ) -> bool:
-        """
-        Kanaldagi eski postni '🔴 SOTILDI ❌' deb edit qiladi.
-        E'lonning to'liq ma'lumotlarini saqlab qoladi.
-        """
-        if not config.CHANNEL_ID or not channel_post_id:
-            return False
+    async def post_to_sell_group(
+        self,
+        bot: Bot,
+        sale_data: dict[str, Any],
+        *,
+        photo=None,
+        raise_errors: bool = False,
+    ) -> int | None:
+        # Only an explicit product file_id is eligible. Private IMEI URLs are
+        # record evidence, never a fallback image for another audience.
+        photo = photo or sale_data.get("phone_photo_file_id")
+        return await self._send(
+            bot,
+            config.GROUP_SOTUV_ID,
+            build_sell_group_caption(sale_data),
+            photo,
+            raise_errors=raise_errors,
+        )
 
-        if phone_data:
-            new_caption = build_channel_caption(phone_data, is_sold=True)
-        else:
-            new_caption = (
-                "🔴 <b>SOTILDI ❌</b>\n"
-                "━━━━━━━━━━━━━━━━━━\n"
-                "<i>Ushbu telefon muvaffaqiyatli sotildi! Boshqa e'lonlar bilan kanalda tanishishingiz mumkin.</i>"
-            )
+    def _channel_bots(self, bot: Bot) -> list[Bot]:
+        candidates = [bot]
+        for candidate in self._bots_by_id.values():
+            if (
+                getattr(candidate, "token", None) == config.HARID_BOT_TOKEN
+                and candidate is not bot
+            ):
+                candidates.append(candidate)
+        return candidates
 
-        async def _try_edit(target_bot: Bot) -> bool:
+    async def _edit_channel(
+        self, bot: Bot, post_id: int, caption: str, photo=None
+    ) -> int:
+        caption_text, caption_mode = prepare_telegram_text(caption, 1024)
+        message_text, message_mode = prepare_telegram_text(caption, 4096)
+        last_error = None
+        for candidate in self._channel_bots(bot):
             try:
-                await target_bot.edit_message_caption(
-                    chat_id=config.CHANNEL_ID,
-                    message_id=channel_post_id,
-                    caption=new_caption,
-                    parse_mode=ParseMode.HTML,
-                )
-                return True
-            except Exception as ce:
-                try:
-                    await target_bot.edit_message_text(
+                if photo:
+                    result = await candidate.edit_message_media(
                         chat_id=config.CHANNEL_ID,
-                        message_id=channel_post_id,
-                        text=new_caption,
-                        parse_mode=ParseMode.HTML,
+                        message_id=post_id,
+                        media=InputMediaPhoto(
+                            media=self._photo(photo),
+                            caption=caption_text,
+                            parse_mode=caption_mode,
+                        ),
                     )
-                    return True
-                except Exception:
-                    logger.warning(f"edit_message xatolik: {ce}")
-                    return False
-
-        # 1. Avval joriy bot orqali urinib ko'rish
-        success = await _try_edit(bot)
-        if success:
-            logger.info(f"Kanaldagi post (ID: {channel_post_id}) 'SOTILDI' holatiga o'tkazildi.")
-            return True
-
-        # 2. Agar sotuv boti tahrir qilolmasa, Harid boti orqali urinib ko'rish
-        if config.HARID_BOT_TOKEN and config.HARID_BOT_TOKEN != bot.token:
-            temp_bot = Bot(
-                token=config.HARID_BOT_TOKEN,
-                default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-            )
+                else:
+                    result = await candidate.edit_message_caption(
+                        chat_id=config.CHANNEL_ID,
+                        message_id=post_id,
+                        caption=caption_text,
+                        parse_mode=caption_mode,
+                    )
+                if result:
+                    return post_id
+                raise NotificationDeliveryError(
+                    "Telegram returned no edit acknowledgement"
+                )
+            except TelegramBadRequest as exc:
+                if "message is not modified" in exc.message.lower():
+                    return post_id
+                last_error = exc
+                if photo:
+                    continue
+            # Only a definitive caption rejection permits trying a text edit.
+            # A transport failure may already have succeeded and propagates.
             try:
-                success2 = await _try_edit(temp_bot)
-                if success2:
-                    logger.info(f"Kanaldagi post (ID: {channel_post_id}) Harid boti orqali 'SOTILDI' holatiga o'tkazildi.")
-                    return True
-            finally:
-                await temp_bot.session.close()
+                result = await candidate.edit_message_text(
+                    chat_id=config.CHANNEL_ID,
+                    message_id=post_id,
+                    text=message_text,
+                    parse_mode=message_mode,
+                )
+                if result:
+                    return post_id
+                raise NotificationDeliveryError(
+                    "Telegram returned no edit acknowledgement"
+                )
+            except TelegramBadRequest as exc:
+                if "message is not modified" in exc.message.lower():
+                    return post_id
+                last_error = exc
+        raise last_error or NotificationDeliveryError(
+            "Channel post could not be edited"
+        )
 
-        return False
+    async def edit_channel_post(
+        self,
+        bot: Bot,
+        post_id: int,
+        phone_data: dict[str, Any],
+        photo=None,
+        *,
+        raise_errors: bool = False,
+    ) -> int | None:
+        """Update the tracked listing; never create another untracked old post."""
+        if not config.CHANNEL_ID or not post_id:
+            return self._failure(
+                NotificationDeliveryError("Channel post is not configured"),
+                raise_errors=raise_errors,
+            )
+        try:
+            caption = await self._channel_caption(phone_data)
+            return await self._edit_channel(bot, post_id, caption, photo)
+        except Exception as exc:
+            return self._failure(exc, raise_errors=raise_errors)
+
+    async def mark_as_sold_on_channel(
+        self,
+        bot: Bot,
+        channel_post_id: int,
+        phone_data: dict[str, Any] | None = None,
+        *,
+        raise_errors: bool = False,
+    ) -> bool:
+        if not config.CHANNEL_ID or not channel_post_id:
+            self._failure(
+                NotificationDeliveryError("Channel post is not configured"),
+                raise_errors=raise_errors,
+            )
+            return False
+        try:
+            caption = await self._channel_caption(phone_data or {}, sold=True)
+            return bool(await self._edit_channel(bot, channel_post_id, caption))
+        except Exception as exc:
+            self._failure(exc, raise_errors=raise_errors)
+            return False
 
 
 poster_service = TelegramPosterService()

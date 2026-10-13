@@ -1,5 +1,7 @@
 # OymaoyBot auditi va tuzatishlar implementatsiya rejasi
 
+**2026-10-07 ijro holati:** Lokal kod tuzatishlari bajarildi. Amaldagi natijalar, testlar va tashqi muhitda qolgan tekshiruvlar [tuzatishlar hisobotida](../../TUZATISHLAR_2026-10-07_UZ.md). Quyidagi audit dalillari va qadamlar dastlabki reja holatini saqlaydi; ular ishlab chiqarishga qo'llanganini anglatmaydi.
+
 > **Agentik ijrochilar uchun:** Agar subagentlar mavjud bo'lsa, ushbu reja bajarilishi uchun `superpowers:subagent-driven-development`, aks holda `superpowers:executing-plans` ishlatilsin. Qadamlar kuzatish uchun checkbox (`- [ ]`) sintaksisidan foydalanadi.
 
 **Maqsad:** Xarid, sotuv, qarz va KPI amallarining ishonchli saqlanishini ta'minlash, noto'g'ri hisob-kitoblarni bartaraf etish va botni tekshiriladigan tartibda ishga tushirish.
