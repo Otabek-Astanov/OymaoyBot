@@ -104,17 +104,26 @@ def create_fsm_storage(redis, *, ttl_seconds: int) -> RedisStorage:
     )
 
 
-def create_dispatcher(features: tuple[str, ...], redis: Redis) -> Dispatcher:
+def create_dispatcher(features: tuple[str, ...], redis: Redis | None) -> Dispatcher:
     # Handler modules and Google services have no import-time IO. Import only
     # after configuration validation so they see refreshed runtime settings.
     from bot_common.access import AccessMiddleware
     from bot_common.navigation import create_navigation_router
 
-    storage = create_fsm_storage(redis, ttl_seconds=config.FSM_TTL_SECONDS)
-    dispatcher = ManagedDispatcher(
-        storage=storage,
-        events_isolation=storage.create_isolation(lock_kwargs={"timeout": 300}),
-    )
+    if redis is None:
+        from aiogram.fsm.storage.memory import MemoryStorage, SimpleEventIsolation
+
+        storage = MemoryStorage()
+        dispatcher = ManagedDispatcher(
+            storage=storage,
+            events_isolation=SimpleEventIsolation(),
+        )
+    else:
+        storage = create_fsm_storage(redis, ttl_seconds=config.FSM_TTL_SECONDS)
+        dispatcher = ManagedDispatcher(
+            storage=storage,
+            events_isolation=storage.create_isolation(lock_kwargs={"timeout": 300}),
+        )
     dispatcher.update.outer_middleware(AccessMiddleware(features))
     dispatcher.include_router(create_navigation_router(features))
     for feature in features:
@@ -199,14 +208,18 @@ async def run(features: tuple[str, ...] | None = None) -> None:
     lock = WriterProcessLock(str(config.OPERATION_DB_PATH) + ".lock")
     try:
         lock.acquire()
-        # Redis must be reachable before polling starts. Never fall back to a
-        # volatile FSM when Redis fails.
         for _ in grouped:
-            client = Redis.from_url(
-                config.FSM_STORAGE_URL, socket_connect_timeout=5, socket_timeout=10
-            )
-            redis_clients.append(client)
-            await asyncio.wait_for(client.ping(), timeout=10)
+            try:
+                client = Redis.from_url(
+                    config.FSM_STORAGE_URL, socket_connect_timeout=2, socket_timeout=3
+                )
+                await asyncio.wait_for(client.ping(), timeout=2)
+                redis_clients.append(client)
+            except Exception as exc:
+                logger.warning(
+                    "Redis ulanmadi (%s). Lokal MemoryStorage ishlatiladi.", exc
+                )
+                redis_clients.append(None)
 
         from services.google_drive import drive_service
         from services.google_sheets import sheets_service
@@ -269,7 +282,7 @@ async def run(features: tuple[str, ...] | None = None) -> None:
         await asyncio.gather(
             *(dispatcher.fsm.close() for dispatcher in dispatchers),
             *(bot.session.close() for bot in bots),
-            *(redis.aclose() for redis in redis_clients),
+            *(redis.aclose() for redis in redis_clients if redis is not None),
             return_exceptions=True,
         )
         # Finish any submitted write before releasing the single-writer lock.
