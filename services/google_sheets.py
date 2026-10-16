@@ -379,6 +379,14 @@ class GoogleSheetsService:
             raise AmbiguousPhone(matches)
         return matches[0] if matches else None
 
+    def get_stock_phones(self):
+        """Phones still for sale ("Sotuvda"), read fresh for the daily report."""
+        return [
+            row
+            for row in self._load_phones_cache(True).values()
+            if str(row.get("Holati", "")).strip() == "Sotuvda"
+        ]
+
     def get_phone_by_id(self, phone_id, *, fresh=False):
         cache = self._load_phones_cache(fresh)
         if str(phone_id) in cache:

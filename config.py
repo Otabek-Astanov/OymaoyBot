@@ -35,6 +35,7 @@ FSM_TTL_SECONDS: int
 IO_TIMEOUT_SECONDS: int
 IO_MAX_PENDING: int
 DROP_PENDING_UPDATES: bool
+DAILY_REPORT_TIME: str
 
 
 class ConfigurationError(ValueError):
@@ -70,6 +71,7 @@ def _refresh_settings() -> None:
     global SPREADSHEET_ID, DRIVE_FOLDER_ID, FSM_STORAGE_URL, GOOGLE_SERVICE_ACCOUNT_FILE
     global DRIVE_TOKEN_FILE, GOOGLE_OAUTH_TOKEN_FILE, MEDIA_DIR, OPERATION_DB_PATH
     global FSM_TTL_SECONDS, IO_TIMEOUT_SECONDS, IO_MAX_PENDING, DROP_PENDING_UPDATES
+    global DAILY_REPORT_TIME
     ENABLED_FEATURES = _enabled_features()
     BOT_TOKEN = _text("BOT_TOKEN")
     HARID_BOT_TOKEN = _text("HARID_BOT_TOKEN") or BOT_TOKEN
@@ -98,6 +100,8 @@ def _refresh_settings() -> None:
     IO_TIMEOUT_SECONDS = _positive_integer("IO_TIMEOUT_SECONDS", 45)
     IO_MAX_PENDING = _positive_integer("IO_MAX_PENDING", 64)
     DROP_PENDING_UPDATES = _text("DROP_PENDING_UPDATES", "false").lower() == "true"
+    # Daily in-stock report to GROUP_HARID_ID; "off" disables it.
+    DAILY_REPORT_TIME = _text("DAILY_REPORT_TIME", "14:00")
 
 
 def load_runtime_config(env_file: str | Path | None = BASE_DIR / ".env") -> None:
@@ -142,6 +146,10 @@ def validate_runtime_config(features: tuple[str, ...] | None = None) -> None:
         raise ConfigurationError(
             "ADMIN_IDS faqat vergul bilan ajratilgan raqamlardan iborat bo'lishi kerak"
         )
+    if DAILY_REPORT_TIME.lower() != "off" and not re.fullmatch(
+        r"([01][0-9]|2[0-3]):[0-5][0-9]", DAILY_REPORT_TIME
+    ):
+        raise ConfigurationError("DAILY_REPORT_TIME HH:MM (masalan 14:00) yoki off bo'lsin")
     for key in ("CHANNEL_ID", "GROUP_HARID_ID", "GROUP_SOTUV_ID"):
         value = globals()[key]
         if value and not re.fullmatch(r"-?[0-9]+|@[A-Za-z][A-Za-z0-9_]{4,}", value):

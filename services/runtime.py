@@ -182,6 +182,29 @@ async def stop_dispatchers(dispatchers: Sequence[Dispatcher]) -> None:
     )
 
 
+def daily_report_worker(bots, grouped, sheets_service):
+    """The purchase bot reports in-stock phones to its group once a day."""
+    if not config.GROUP_HARID_ID or config.DAILY_REPORT_TIME.lower() == "off":
+        return None
+    bot = next(
+        (b for b, features in zip(bots, grouped.values()) if "harid" in features), None
+    )
+    if bot is None:
+        return None
+    from services.daily_report import DailyStockReport
+
+    state = Path(config.OPERATION_DB_PATH).with_name("daily_report.json")
+    logger.info("Kunlik ombor hisoboti: har kuni %s", config.DAILY_REPORT_TIME)
+    return DailyStockReport(
+        io_worker,
+        sheets_service,
+        bot,
+        config.GROUP_HARID_ID,
+        config.DAILY_REPORT_TIME,
+        state,
+    )
+
+
 async def run(features: tuple[str, ...] | None = None) -> None:
     config.load_runtime_config()
     enabled = config.ENABLED_FEATURES if features is None else features
@@ -282,8 +305,12 @@ async def run(features: tuple[str, ...] | None = None) -> None:
             for dispatcher, bot in zip(dispatchers, bots, strict=True)
         ]
         notifications = NotificationWorker(io_worker, sheets_service, bots_by_id)
+        workers = [notifications.run()]
+        report = daily_report_worker(bots, grouped, sheets_service)
+        if report is not None:
+            workers.append(report.run())
         await supervise(
-            [*polling, notifications.run()],
+            [*polling, *workers],
             stop,
             shutdown=lambda: stop_dispatchers(dispatchers),
         )

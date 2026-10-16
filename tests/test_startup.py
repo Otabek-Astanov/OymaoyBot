@@ -343,3 +343,23 @@ async def test_runtime_starts_only_enabled_features(monkeypatch, tmp_path):
     with pytest.raises(Stop):
         await runtime.run()
     assert seen == [("harid", "sotuv")]
+
+
+def test_daily_report_runs_on_the_purchase_bot_only_when_configured(monkeypatch, tmp_path):
+    runtime = runtime_module()
+    import config
+
+    monkeypatch.setattr(config, "OPERATION_DB_PATH", str(tmp_path / "ops.sqlite"))
+    monkeypatch.setattr(config, "DAILY_REPORT_TIME", "14:00")
+    monkeypatch.setattr(config, "GROUP_HARID_ID", "-100123")
+    bots = ["purchase-and-finance-bot", "sales-bot"]
+    grouped = {"t1": ("harid", "harajat"), "t2": ("sotuv",)}
+    report = runtime.daily_report_worker(bots, grouped, object())
+    assert report.bot == "purchase-and-finance-bot"
+    assert report.state_path == tmp_path / "daily_report.json"
+    assert runtime.daily_report_worker(bots[1:], {"t2": ("sotuv",)}, object()) is None
+    monkeypatch.setattr(config, "DAILY_REPORT_TIME", "off")
+    assert runtime.daily_report_worker(bots, grouped, object()) is None
+    monkeypatch.setattr(config, "DAILY_REPORT_TIME", "14:00")
+    monkeypatch.setattr(config, "GROUP_HARID_ID", "")
+    assert runtime.daily_report_worker(bots, grouped, object()) is None

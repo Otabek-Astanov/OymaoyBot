@@ -42,6 +42,8 @@ venv/bin/python run_all.py
 
 `BOT_TOKEN` umumiy token; bo'sh `HARID_BOT_TOKEN`, `SOTUV_BOT_TOKEN`, `HARAJAT_BOT_TOKEN` shu tokendan foydalanadi. `run_all.py` uchun yoqilgan funksiyalarning tokeni yoki umumiy token kerak. Bo'sh token funksiyani o'chirmaydi; funksiyani o'chirish uchun `ENABLED_FEATURES` ishlatiladi (masalan, `ENABLED_FEATURES=harid,sotuv` harajat botini, ya'ni Kirim/Chiqim'ni ishga tushirmaydi). Bo'sh qiymat uchala funksiyani yoqadi. `DROP_PENDING_UPDATES=false` standart: navbatdagi update lar o'chirilmaydi.
 
+Har kuni `DAILY_REPORT_TIME` da (standart `14:00`, Toshkent vaqti) Harid boti `GROUP_HARID_ID` guruhiga sotuvda turgan, lekin kanalga hali e'lon qilinmagan telefonlar hisobotini yuboradi: tepada qisqa ma'lumot, ochiladigan blokda `IMEI — model` ro'yxati. Bot o'sha paytda o'chiq bo'lsa, 3 soat ichida yuboradi; kuniga bir martadan ortiq yubormaydi. `DAILY_REPORT_TIME=off` hisobotni o'chiradi.
+
 ## Tekshiruv
 
 ```bash
