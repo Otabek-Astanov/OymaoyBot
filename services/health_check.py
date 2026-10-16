@@ -99,7 +99,7 @@ class SystemHealthChecker:
             features
             or (
                 feature
-                for feature in config.FEATURES
+                for feature in config.ENABLED_FEATURES
                 if getattr(config, feature.upper() + "_BOT_TOKEN") == bot.token
             )
         )

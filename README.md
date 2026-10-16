@@ -40,7 +40,7 @@ venv/bin/python run_all.py
 
 `main.py` ham shu umumiy runtime ga yo'naltirilgan. Faqat alohida funksiya kerak bo'lsa `venv/bin/python -m bot_harid.main`, `-m bot_sotuv.main` yoki `-m bot_harajat.main` ishlatiladi. Bular ham ayni jurnal va yagona yozuvchi qulfidan foydalanadi; bir bazaga bir vaqtda alohida entrypointlarni yurgizmang. Konfiguratsiya yoki startup tekshiruvi xato bo'lsa chiqish kodi `1`.
 
-`BOT_TOKEN` umumiy token; bo'sh `HARID_BOT_TOKEN`, `SOTUV_BOT_TOKEN`, `HARAJAT_BOT_TOKEN` shu tokendan foydalanadi. `run_all.py` uchun uchala funksiya tokeni yoki umumiy token kerak. `DROP_PENDING_UPDATES=false` standart: navbatdagi update lar o'chirilmaydi.
+`BOT_TOKEN` umumiy token; bo'sh `HARID_BOT_TOKEN`, `SOTUV_BOT_TOKEN`, `HARAJAT_BOT_TOKEN` shu tokendan foydalanadi. `run_all.py` uchun yoqilgan funksiyalarning tokeni yoki umumiy token kerak. Bo'sh token funksiyani o'chirmaydi; funksiyani o'chirish uchun `ENABLED_FEATURES` ishlatiladi (masalan, `ENABLED_FEATURES=harid,sotuv` harajat botini, ya'ni Kirim/Chiqim'ni ishga tushirmaydi). Bo'sh qiymat uchala funksiyani yoqadi. `DROP_PENDING_UPDATES=false` standart: navbatdagi update lar o'chirilmaydi.
 
 ## Tekshiruv
 

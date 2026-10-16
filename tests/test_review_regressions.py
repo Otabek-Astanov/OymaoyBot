@@ -553,3 +553,36 @@ async def test_sotuv_only_diagnostics_check_channel_edit_permission(
     ready, _, flags = await checker.run_diagnostics(SalesBot(), features=("sotuv",))
     assert not ready
     assert not flags["channel_ok"]
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_ignore_a_disabled_feature_on_a_shared_token(
+    monkeypatch, tmp_path
+):
+    from services.health_check import SystemHealthChecker
+    from test_health_check import DirectWorker, ReadinessService
+
+    class PurchaseBot:
+        id = 321
+        token = "shared-token"
+
+        async def get_chat(self, destination):
+            return SimpleNamespace(id=destination)
+
+        async def get_chat_member(self, destination, user_id):
+            return SimpleNamespace(
+                status="administrator", can_edit_messages=True, can_post_messages=True
+            )
+
+    path = tmp_path / "credentials.json"
+    path.write_text("{}")
+    monkeypatch.setattr(config, "GOOGLE_SERVICE_ACCOUNT_FILE", str(path))
+    monkeypatch.setattr(config, "DRIVE_FOLDER_ID", "")
+    monkeypatch.setattr(config, "HARID_BOT_TOKEN", "shared-token")
+    monkeypatch.setattr(config, "HARAJAT_BOT_TOKEN", "shared-token")
+    monkeypatch.setattr(config, "ENABLED_FEATURES", ("harid", "sotuv"))
+    checker = SystemHealthChecker(
+        sheets=ReadinessService(), drive=ReadinessService(), worker=DirectWorker()
+    )
+    await checker.run_diagnostics(PurchaseBot())
+    assert list(checker._cache) == [(321, ("harid",))]

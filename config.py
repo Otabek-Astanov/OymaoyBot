@@ -13,6 +13,7 @@ TOKEN_PATTERN = re.compile(r"^[0-9]{5,}:[A-Za-z0-9_-]{30,}$")
 
 # Compatibility names are refreshed together by load_runtime_config(). These
 # annotations keep the public settings discoverable without reading .env.
+ENABLED_FEATURES: tuple[str, ...]
 BOT_TOKEN: str
 HARID_BOT_TOKEN: str
 SOTUV_BOT_TOKEN: str
@@ -53,12 +54,23 @@ def _positive_integer(key: str, default: int) -> int:
     return value
 
 
+def _enabled_features() -> tuple[str, ...]:
+    # Empty means every feature; an empty *_BOT_TOKEN alone never disables one,
+    # because it falls back to BOT_TOKEN.
+    raw = _text("ENABLED_FEATURES")
+    if not raw:
+        return FEATURES
+    return tuple(dict.fromkeys(item.strip().lower() for item in raw.split(",") if item.strip()))
+
+
 def _refresh_settings() -> None:
+    global ENABLED_FEATURES
     global BOT_TOKEN, HARID_BOT_TOKEN, SOTUV_BOT_TOKEN, HARAJAT_BOT_TOKEN
     global ADMIN_IDS_RAW, ADMIN_IDS, CHANNEL_ID, GROUP_HARID_ID, GROUP_SOTUV_ID
     global SPREADSHEET_ID, DRIVE_FOLDER_ID, FSM_STORAGE_URL, GOOGLE_SERVICE_ACCOUNT_FILE
     global DRIVE_TOKEN_FILE, GOOGLE_OAUTH_TOKEN_FILE, MEDIA_DIR, OPERATION_DB_PATH
     global FSM_TTL_SECONDS, IO_TIMEOUT_SECONDS, IO_MAX_PENDING, DROP_PENDING_UPDATES
+    ENABLED_FEATURES = _enabled_features()
     BOT_TOKEN = _text("BOT_TOKEN")
     HARID_BOT_TOKEN = _text("HARID_BOT_TOKEN") or BOT_TOKEN
     SOTUV_BOT_TOKEN = _text("SOTUV_BOT_TOKEN") or BOT_TOKEN
@@ -100,9 +112,11 @@ def fsm_uses_memory() -> bool:
 
 
 def validate_runtime_config(features: tuple[str, ...] | None = None) -> None:
-    features = FEATURES if features is None else features
+    features = ENABLED_FEATURES if features is None else features
     if not features or any(feature not in FEATURES for feature in features):
-        raise ConfigurationError("Bot features must be harid, sotuv, or harajat")
+        raise ConfigurationError(
+            "ENABLED_FEATURES faqat harid, sotuv, harajat dan iborat bo'lishi kerak"
+        )
     for feature in features:
         key = feature.upper() + "_BOT_TOKEN"
         if not TOKEN_PATTERN.fullmatch(globals()[key]):

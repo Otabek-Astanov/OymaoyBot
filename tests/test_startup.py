@@ -320,3 +320,26 @@ async def test_memory_url_skips_redis_explicitly(monkeypatch, tmp_path):
     _patch_until_google(monkeypatch, tmp_path, runtime, "memory://", NoRedis)
     with pytest.raises(_StopAfterRedis):
         await runtime.run(("harid",))
+
+
+
+@pytest.mark.asyncio
+async def test_runtime_starts_only_enabled_features(monkeypatch, tmp_path):
+    runtime = runtime_module()
+    import config
+
+    seen = []
+
+    class Stop(Exception):
+        pass
+
+    def validate(features):
+        seen.append(features)
+        raise Stop
+
+    monkeypatch.setattr(config, "load_runtime_config", lambda: None)
+    monkeypatch.setattr(config, "ENABLED_FEATURES", ("harid", "sotuv"))
+    monkeypatch.setattr(config, "validate_runtime_config", validate)
+    with pytest.raises(Stop):
+        await runtime.run()
+    assert seen == [("harid", "sotuv")]

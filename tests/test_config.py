@@ -25,6 +25,7 @@ def settings_module(monkeypatch):
         "SPREADSHEET_ID",
         "GOOGLE_SERVICE_ACCOUNT_FILE",
         "FSM_STORAGE_URL",
+        "ENABLED_FEATURES",
     ):
         monkeypatch.delenv(key, raising=False)
     spec = importlib.util.spec_from_file_location("isolated_config", ROOT / "config.py")
@@ -89,3 +90,23 @@ def test_all_required_sheets_and_stable_phone_identity(settings_module):
     assert len(config.DEFAULT_HEADERS) == 8
     assert "Telefon ID" in config.DEFAULT_HEADERS[config.SHEET_PHONES]
     assert "Elon narxi ($)" in config.DEFAULT_HEADERS[config.SHEET_PHONES]
+
+
+def test_enabled_features_switch_off_a_bot_that_shares_bot_token(
+    settings_module, monkeypatch
+):
+    # An empty HARAJAT_BOT_TOKEN falls back to BOT_TOKEN, so only this setting
+    # can keep Kirim/Chiqim out of the purchase bot.
+    config, _ = settings_module
+    monkeypatch.setenv("BOT_TOKEN", TOKEN)
+    monkeypatch.setenv("HARAJAT_BOT_TOKEN", "")
+    config.load_runtime_config(env_file=None)
+    assert config.ENABLED_FEATURES == ("harid", "sotuv", "harajat")
+    assert config.HARAJAT_BOT_TOKEN == TOKEN
+    monkeypatch.setenv("ENABLED_FEATURES", " Harid, sotuv ,harid ")
+    config.load_runtime_config(env_file=None)
+    assert config.ENABLED_FEATURES == ("harid", "sotuv")
+    monkeypatch.setenv("ENABLED_FEATURES", "harid,kassa")
+    config.load_runtime_config(env_file=None)
+    with pytest.raises(config.ConfigurationError, match="ENABLED_FEATURES"):
+        config.validate_runtime_config()

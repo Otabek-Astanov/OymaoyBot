@@ -184,7 +184,7 @@ async def stop_dispatchers(dispatchers: Sequence[Dispatcher]) -> None:
 
 async def run(features: tuple[str, ...] | None = None) -> None:
     config.load_runtime_config()
-    enabled = config.FEATURES if features is None else features
+    enabled = config.ENABLED_FEATURES if features is None else features
     config.validate_runtime_config(enabled)
     tokens = {
         feature: getattr(config, feature.upper() + "_BOT_TOKEN") for feature in enabled
