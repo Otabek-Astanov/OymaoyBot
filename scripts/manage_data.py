@@ -53,14 +53,41 @@ def inspect_schema(service):
     return result
 
 
+def missing_header_positions(headers, expected, missing):
+    """Place each missing header next to its DEFAULT_HEADERS neighbour.
+
+    Returns (final layout, [(header, column index)]) in insertion order; a header
+    goes after the nearest earlier expected header, else before the nearest
+    later one, else at the end.
+    """
+    layout = list(headers)
+    placed = []
+    for position, name in enumerate(expected):
+        if name not in missing:
+            continue
+        earlier = [h for h in expected[:position] if h in layout]
+        later = [h for h in expected[position + 1 :] if h in layout]
+        if earlier:
+            column = layout.index(earlier[-1]) + 1
+        elif later:
+            column = layout.index(later[0])
+        else:
+            column = len(layout)
+        layout.insert(column, name)
+        placed.append((name, column))
+    return layout, placed
+
+
 def schema_proposal(service, *, bootstrap=False):
     """Append only new identity/listing columns and ledger; never replace financial data."""
     existing = {ws.title: ws for ws in service.spreadsheet.worksheets()}
     requests, changes = [], []
     next_sheet_id = max((ws.id for ws in existing.values()), default=0) + 1
     for title, expected in config.DEFAULT_HEADERS.items():
+        if title == config.SHEET_OPERATIONS and title not in existing:
+            continue  # the operation ledger lives in the local SQLite journal
         if title not in existing:
-            if title != config.SHEET_OPERATIONS and not bootstrap:
+            if not bootstrap:
                 raise SchemaError(
                     f"{title}: dastlabki varaq mavjud emas; yangi baza uchun --bootstrap ishlating"
                 )
@@ -109,8 +136,47 @@ def schema_proposal(service, *, bootstrap=False):
             raise SchemaError(
                 f"{title}: kutilmagan yetishmayotgan moliyaviy sarlavhalar; qo'lda tekshiring"
             )
-        new_headers = headers + missing
-        if missing:
+        if missing and headers:
+            # Insert real columns so existing data and formulas shift with them.
+            new_headers, placed = missing_header_positions(headers, expected, missing)
+            for name, column in placed:
+                requests.append(
+                    {
+                        "insertDimension": {
+                            "range": {
+                                "sheetId": ws.id,
+                                "dimension": "COLUMNS",
+                                "startIndex": column,
+                                "endIndex": column + 1,
+                            },
+                            "inheritFromBefore": column > 0,
+                        }
+                    }
+                )
+                requests.append(
+                    {
+                        "updateCells": {
+                            "start": {
+                                "sheetId": ws.id,
+                                "rowIndex": 0,
+                                "columnIndex": column,
+                            },
+                            "rows": [{"values": [typed_cell(name)]}],
+                            "fields": "userEnteredValue",
+                        }
+                    }
+                )
+            changes.append(
+                {
+                    "sheet": title,
+                    "action": "insert_headers",
+                    "headers": [
+                        {"header": name, "column": column} for name, column in placed
+                    ],
+                }
+            )
+        elif missing:
+            new_headers = list(missing)
             if getattr(ws, "col_count", len(new_headers)) < len(new_headers):
                 requests.append(
                     {
@@ -139,13 +205,21 @@ def schema_proposal(service, *, bootstrap=False):
             changes.append(
                 {"sheet": title, "action": "append_headers", "headers": missing}
             )
+        else:
+            new_headers = headers
         if title == config.SHEET_PHONES:
             id_column = new_headers.index("Telefon ID")
+            # Rows were read before any column insert: existing IDs sit at the old index.
+            old_id_column = headers.index("Telefon ID") if "Telefon ID" in headers else None
             current_ids = set()
             for row_index, row in enumerate(values[1:], start=2):
                 if not any(row):
                     continue
-                identity = str(row[id_column]).strip() if id_column < len(row) else ""
+                identity = (
+                    str(row[old_id_column]).strip()
+                    if old_id_column is not None and old_id_column < len(row)
+                    else ""
+                )
                 if identity:
                     if identity in current_ids:
                         raise SchemaError(

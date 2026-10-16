@@ -72,10 +72,13 @@ class AccessMiddleware(BaseMiddleware):
             or text == "📱 Yangi sotuvni rasmiylashtirish"
         )
         try:
+            # Cached (cleared after every bot write); a revoked user is still
+            # refused at commit, where _authorize reads Xodimlar fresh.
             active, role, name = await io_worker.call(
-                sheets_service.check_member, user.id, force_refresh=True
+                sheets_service.check_member, user.id
             )
         except (ServiceError, WorkerBusyError, asyncio.TimeoutError) as exc:
+            # check_member already applied its own fallbacks; anything left is closed.
             logger.warning("Access check unavailable: %s", type(exc).__name__)
             await message.answer(
                 "⚠️ Ruxsat ma’lumotini tekshirib bo‘lmadi. Amal bajarilmadi."

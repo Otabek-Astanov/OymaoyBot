@@ -50,7 +50,9 @@ class OperationJournal:
     def __init__(self, path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(self.path)
+        self.connection = sqlite3.connect(
+            self.path, check_same_thread=False, timeout=30
+        )
         if self.path.is_file():
             self.path.chmod(0o600)
         self.connection.row_factory = sqlite3.Row

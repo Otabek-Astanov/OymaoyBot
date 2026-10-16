@@ -17,20 +17,28 @@ from utils.formatters import safe_html
 def menu_for(role, features):
     features = set(features)
     rows = []
+    has_balance = role in {"Admin", "Hisobchi", "Rahbariyat", "Investor"}
+    harid_added = False
     if role in {"Admin", "Hisobchi", "Rahbariyat", "Sotuvchi"}:
         if "harid" in features:
-            rows += [
-                [KeyboardButton(text="📥 Harid qilish")],
-                [
+            harid_added = True
+            rows.append([KeyboardButton(text="📥 Harid qilish")])
+            if has_balance:
+                rows.append([
+                    KeyboardButton(text="💰 Balance"),
+                    KeyboardButton(text="📦 Karobka"),
+                ])
+                rows.append([KeyboardButton(text="📢 Telegram kanalga e'lon berish")])
+            else:
+                rows.append([
                     KeyboardButton(text="📢 Telegram kanalga e'lon berish"),
                     KeyboardButton(text="📦 Karobka"),
-                ],
-            ]
+                ])
         if "sotuv" in features:
             rows.append([KeyboardButton(text="📱 Yangi sotuvni rasmiylashtirish")])
     if role in {"Admin", "Hisobchi"} and "harajat" in features:
         rows.append([KeyboardButton(text="📈 Kirim"), KeyboardButton(text="📉 Chiqim")])
-    if role in {"Admin", "Hisobchi", "Rahbariyat", "Investor"}:
+    if has_balance and not harid_added:
         rows.append([KeyboardButton(text="💰 Balance")])
     return (
         ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
@@ -41,7 +49,7 @@ def menu_for(role, features):
 
 async def member(user_id):
     active, role, name = await io_worker.call(
-        sheets_service.check_member, user_id, force_refresh=True
+        sheets_service.check_member, user_id, force_refresh=False
     )
     if not active:
         raise BusinessRuleError(f"Ruxsat berilmagan. Telegram ID: {user_id}")

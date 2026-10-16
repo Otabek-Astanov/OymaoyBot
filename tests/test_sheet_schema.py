@@ -2,6 +2,7 @@ from uuid import uuid4
 
 import pytest
 
+import config
 from services.errors import SchemaError
 from tests.test_idempotency import storage as storage_fixture
 
@@ -63,7 +64,7 @@ def test_staff_update_keeps_blank_physical_rows_and_reordered_headers(storage):
     assert ws.values[2] == []
 
 
-def test_explicit_schema_preview_only_adds_identity_listing_and_ledger(storage):
+def test_explicit_schema_preview_only_adds_identity_and_listing(storage):
     from scripts.manage_data import schema_proposal
     from tests.storage_fakes import add_phone
 
@@ -79,15 +80,27 @@ def test_explicit_schema_preview_only_adds_identity_listing_and_ledger(storage):
     proposal = schema_proposal(service)
     assert proposal["financial_cells_changed"] == 0
     assert proposal == schema_proposal(service)
+    # The operation ledger stays in the local SQLite journal, not in Sheets.
     assert {change["action"] for change in proposal["changes"]} == {
-        "append_headers",
+        "insert_headers",
         "assign_phone_id",
-        "create_sheet",
     }
     assert not sheet.calls
-    for request in proposal["batch"]["requests"]:
-        if request.get("updateCells", {}).get("start", {}).get("sheetId") == ws.id:
-            assert request["updateCells"]["start"]["columnIndex"] >= 32
+    expected = config.DEFAULT_HEADERS["Telefonlar"]
+    inserted = next(
+        c["headers"] for c in proposal["changes"] if c["action"] == "insert_headers"
+    )
+    # Each new column lands where DEFAULT_HEADERS puts it, not at the far right.
+    assert inserted == [
+        {"header": "Elon narxi ($)", "column": expected.index("Elon narxi ($)")},
+        {"header": "Telefon ID", "column": expected.index("Telefon ID")},
+    ]
+    id_writes = [
+        r["updateCells"]["start"]["columnIndex"]
+        for r in proposal["batch"]["requests"]
+        if r.get("updateCells", {}).get("start", {}).get("rowIndex", 0) > 0
+    ]
+    assert id_writes and set(id_writes) == {expected.index("Telefon ID")}
 
 
 def test_schema_preview_does_not_guess_missing_financial_headers(storage):
@@ -98,3 +111,43 @@ def test_schema_preview_does_not_guess_missing_financial_headers(storage):
     with pytest.raises(SchemaError, match="moliyaviy"):
         schema_proposal(service)
     assert not sheet.calls
+
+
+def test_missing_headers_follow_their_default_neighbours():
+    from scripts.manage_data import missing_header_positions
+
+    expected = ["A", "B", "C", "D"]
+    layout, placed = missing_header_positions(["A", "C", "X"], expected, ["B", "D"])
+    assert layout == ["A", "B", "C", "D", "X"]
+    assert placed == [("B", 1), ("D", 3)]
+    layout, placed = missing_header_positions(["C"], expected, ["A"])
+    assert placed == [("A", 0)] and layout == ["A", "C"]
+
+
+def test_inserting_a_column_before_phone_ids_keeps_existing_ids(storage):
+    from scripts.manage_data import schema_proposal
+    from tests.storage_fakes import add_phone
+
+    service, sheet = storage
+    ws = sheet.sheets["Telefonlar"]
+    add_phone(sheet, phone_id="phone-1", imei="111111")
+    add_phone(sheet, phone_id="", imei="222222")
+    column = ws.values[0].index("Elon narxi ($)")
+    for row in ws.values:
+        row.pop(column)
+    proposal = schema_proposal(service)
+    assigned = [c for c in proposal["changes"] if c["action"] == "assign_phone_id"]
+    # Only the row without an ID gets one, written at the shifted ID column.
+    assert [c["row"] for c in assigned] == [3]
+    writes = [
+        r["updateCells"]["start"]
+        for r in proposal["batch"]["requests"]
+        if r.get("updateCells", {}).get("start", {}).get("rowIndex", 0) > 0
+    ]
+    assert writes == [
+        {
+            "sheetId": ws.id,
+            "rowIndex": 2,
+            "columnIndex": config.DEFAULT_HEADERS["Telefonlar"].index("Telefon ID"),
+        }
+    ]

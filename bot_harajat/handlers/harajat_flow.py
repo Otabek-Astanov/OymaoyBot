@@ -31,7 +31,7 @@ MANAGEMENT_PEOPLE = {"Abduqayum", "Investor"}
 
 async def require_accountant(user_id):
     active, role, _ = await io_worker.call(
-        sheets_service.check_member, user_id, force_refresh=True
+        sheets_service.check_member, user_id
     )
     if not active or role not in {"Admin", "Hisobchi"}:
         raise BusinessRuleError("Bu amal faqat Admin va Hisobchi uchun ruxsat etilgan.")
@@ -46,7 +46,7 @@ async def save_completed(message, state, text):
 @safe_handler
 async def view_balance(message: types.Message):
     active, role, _ = await io_worker.call(
-        sheets_service.check_member, message.from_user.id, force_refresh=True
+        sheets_service.check_member, message.from_user.id
     )
     if not active or role not in {"Admin", "Hisobchi", "Rahbariyat", "Investor"}:
         raise BusinessRuleError("Balansni ko‘rishga ruxsat berilmagan.")
@@ -88,6 +88,10 @@ async def start_chiqim(message: types.Message, state: FSMContext):
 @safe_handler
 async def exp_category_chosen(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
     cat = call.data.partition(":")[2]
     if cat not in EXPENSE_CATEGORIES:
         raise BusinessRuleError("Noto‘g‘ri chiqim toifasi.")
@@ -99,7 +103,7 @@ async def exp_category_chosen(call: types.CallbackQuery, state: FSMContext):
         )
     elif cat == "KPI":
         staff = await io_worker.call(
-            sheets_service.get_staff_list, active_only=True, force_refresh=True
+            sheets_service.get_staff_list, active_only=True
         )
         await state.set_state(ChiqimStates.choosing_kpi_staff)
         await call.message.answer(
@@ -146,8 +150,12 @@ async def simple_amount_entered(message: types.Message, state: FSMContext):
 @safe_handler
 async def staff_chosen(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
     staff = await io_worker.call(
-        sheets_service.get_staff_list, active_only=True, force_refresh=True
+        sheets_service.get_staff_list, active_only=True
     )
     selection = call.data.partition(":")[2]
     person = next(
@@ -185,7 +193,7 @@ async def kpi_amount_entered(message: types.Message, state: FSMContext):
 async def remont_imei_entered(message: types.Message, state: FSMContext):
     phone = await find_phone(message.text.strip(), state)
     if not phone:
-        raise BusinessRuleError("Telefon topilmadi. To‘liq IMEI ni tekshiring.")
+        raise BusinessRuleError("Telefon topilmadi. IMEI ni tekshiring.")
     if phone.get("Holati") != "Sotuvda":
         raise BusinessRuleError(
             "Remont faqat ombordagi telefon uchun kiritiladi. Sotuvdan keyingi xarajat qoidasi aniqlanmagan."
@@ -270,6 +278,10 @@ async def phone_debt_amount_entered(message: types.Message, state: FSMContext):
 @safe_handler
 async def rahb_recipient_chosen(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
     person = call.data.partition(":")[2]
     if person not in MANAGEMENT_PEOPLE:
         raise BusinessRuleError("Noto‘g‘ri qabul qiluvchi.")
@@ -314,12 +326,16 @@ async def start_kirim(message: types.Message, state: FSMContext):
 @safe_handler
 async def inc_category_chosen(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
     cat = call.data.partition(":")[2]
     if cat not in INCOME_CATEGORIES:
         raise BusinessRuleError("Noto‘g‘ri kirim toifasi.")
     await state.update_data(category=cat)
     if cat == "Hamkorlar":
-        partners = await io_worker.call(sheets_service.get_partners, force_refresh=True)
+        partners = await io_worker.call(sheets_service.get_partners)
         await state.set_state(KirimStates.choosing_partner)
         await call.message.answer(
             "Hamkorni tanlang:",
@@ -345,7 +361,11 @@ async def inc_category_chosen(call: types.CallbackQuery, state: FSMContext):
 @safe_handler
 async def inc_partner_chosen(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
-    partners = await io_worker.call(sheets_service.get_partners, force_refresh=True)
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    partners = await io_worker.call(sheets_service.get_partners)
     try:
         partner = resolve_callback_key(call.data.partition(":")[2], partners)
     except ValueError as exc:
@@ -406,6 +426,10 @@ async def dokon_amount_entered(message: types.Message, state: FSMContext):
 @safe_handler
 async def inc_rahb_chosen(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
     person = call.data.partition(":")[2]
     if person not in MANAGEMENT_PEOPLE:
         raise BusinessRuleError("Noto‘g‘ri kirim manbasi.")

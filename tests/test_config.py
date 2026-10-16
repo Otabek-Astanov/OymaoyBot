@@ -74,6 +74,14 @@ def test_valid_configuration_requires_redis_and_credentials(
     monkeypatch.setenv("FSM_STORAGE_URL", "redis://localhost:6379/0")
     loader(env_file=None)
     config.validate_runtime_config()
+    monkeypatch.setenv("FSM_STORAGE_URL", "memory://")
+    loader(env_file=None)
+    config.validate_runtime_config()
+    assert config.fsm_uses_memory()
+    monkeypatch.setenv("FSM_STORAGE_URL", "http://localhost:6379/0")
+    loader(env_file=None)
+    with pytest.raises(config.ConfigurationError, match="FSM_STORAGE_URL"):
+        config.validate_runtime_config()
 
 
 def test_all_required_sheets_and_stable_phone_identity(settings_module):

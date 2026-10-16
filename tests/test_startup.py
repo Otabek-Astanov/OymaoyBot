@@ -246,3 +246,77 @@ async def test_supervisor_calls_public_shutdown_before_cancelling_polling():
     stop.set()
     await task
     assert seen == ["public-stop", "cancel"]
+
+
+class _StopAfterRedis(Exception):
+    pass
+
+
+def _patch_until_google(monkeypatch, tmp_path, runtime, storage_url, redis_cls):
+    import config
+
+    monkeypatch.setattr(config, "load_runtime_config", lambda: None)
+    monkeypatch.setattr(config, "validate_runtime_config", lambda features: None)
+    monkeypatch.setattr(config, "HARID_BOT_TOKEN", "first")
+    monkeypatch.setattr(config, "FSM_STORAGE_URL", storage_url)
+    monkeypatch.setattr(config, "OPERATION_DB_PATH", str(tmp_path / "journal.sqlite"))
+
+    def stop():
+        raise _StopAfterRedis
+
+    class DirectWorker:
+        async def call(self, fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        async def close(self):
+            pass
+
+    google = SimpleNamespace(initialize=stop)
+    monkeypatch.setitem(
+        sys.modules, "services.google_sheets", SimpleNamespace(sheets_service=google)
+    )
+    monkeypatch.setitem(
+        sys.modules, "services.google_drive", SimpleNamespace(drive_service=google)
+    )
+    monkeypatch.setattr(runtime, "Redis", redis_cls)
+    monkeypatch.setattr(runtime, "io_worker", DirectWorker())
+
+
+@pytest.mark.asyncio
+async def test_unreachable_redis_refuses_startup_without_memory_fallback(
+    monkeypatch, tmp_path
+):
+    runtime = runtime_module()
+    closed = []
+
+    class DownRedis:
+        @classmethod
+        def from_url(cls, *args, **kwargs):
+            return cls()
+
+        async def ping(self):
+            raise ConnectionError("redis down")
+
+        async def aclose(self):
+            closed.append(True)
+
+    _patch_until_google(
+        monkeypatch, tmp_path, runtime, "redis://localhost:6379/0", DownRedis
+    )
+    with pytest.raises(runtime.RuntimeStartupError, match="Redis"):
+        await runtime.run(("harid",))
+    assert closed == [True]
+
+
+@pytest.mark.asyncio
+async def test_memory_url_skips_redis_explicitly(monkeypatch, tmp_path):
+    runtime = runtime_module()
+
+    class NoRedis:
+        @classmethod
+        def from_url(cls, *args, **kwargs):
+            raise AssertionError("memory:// must not connect to Redis")
+
+    _patch_until_google(monkeypatch, tmp_path, runtime, "memory://", NoRedis)
+    with pytest.raises(_StopAfterRedis):
+        await runtime.run(("harid",))

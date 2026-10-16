@@ -22,7 +22,9 @@ class IOWorker:
         self._pending: set[asyncio.Future] = set()
         self._closed = False
 
-    async def call(self, function: Callable[..., T], *args, **kwargs) -> T:
+    async def call(
+        self, function: Callable[..., T], *args, timeout: float | None = None, **kwargs
+    ) -> T:
         if self._closed:
             raise RuntimeError("IO worker is closed")
         if len(self._pending) >= self.max_pending:
@@ -47,8 +49,9 @@ class IOWorker:
         future.add_done_callback(completed)
         # Cancellation/timeout does not cancel a submitted financial write.
         # Its durable operation ID remains the authority for reconciliation.
+        effective_timeout = self.timeout_seconds if timeout is None else timeout
         return await asyncio.wait_for(
-            asyncio.shield(future), timeout=self.timeout_seconds
+            asyncio.shield(future), timeout=effective_timeout
         )
 
     async def drain(self) -> None:

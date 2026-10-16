@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4, uuid5
 
+import pytest
 from aiogram.exceptions import TelegramRetryAfter
 from aiogram.methods import SendMessage
 
@@ -543,3 +544,37 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@pytest.mark.asyncio
+async def test_wake_delivery_starts_the_next_round_without_waiting():
+    from services import notification_queue
+
+    rounds = []
+
+    class Worker(notification_queue.NotificationWorker):
+        def __init__(self):
+            self.poll_interval = 30
+
+        async def process_once(self):
+            rounds.append(1)
+            return 0
+
+    task = asyncio.create_task(Worker().run())
+    try:
+        for _ in range(50):
+            if rounds:
+                break
+            await asyncio.sleep(0)
+        assert notification_queue.delivery_active()
+        notification_queue.wake_delivery()
+        await asyncio.wait_for(_until(lambda: len(rounds) >= 2), timeout=1)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    assert not notification_queue.delivery_active()
+
+
+async def _until(condition):
+    while not condition():
+        await asyncio.sleep(0)

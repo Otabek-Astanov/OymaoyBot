@@ -22,7 +22,7 @@ class SystemHealthChecker:
         drive=None,
         worker=None,
         cache_seconds=30,
-        timeout_seconds=10,
+        timeout_seconds=20,
     ):
         self.sheets = sheets
         self.drive = drive

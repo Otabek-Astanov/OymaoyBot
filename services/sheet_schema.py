@@ -53,7 +53,7 @@ def typed_cell(value) -> dict:
     return {"userEnteredValue": {"stringValue": "" if value is None else str(value)}}
 
 
-OPTIONAL_COLUMNS = {"Telefon ID", "Elon narxi ($)"}
+OPTIONAL_COLUMNS = {"Elon narxi ($)"}
 
 
 @dataclass(frozen=True)
@@ -70,8 +70,14 @@ class SheetSchema:
             raise SchemaError(f"{worksheet.title}: takroriy sarlavha")
         missing = (set(expected) - OPTIONAL_COLUMNS) - set(named)
         if missing:
+            hint = (
+                "; scripts/manage_data.py prepare bilan qo'shing"
+                if "Telefon ID" in missing
+                else ""
+            )
             raise SchemaError(
-                f"{worksheet.title}: yetishmayotgan ustunlar: {', '.join(sorted(missing))}"
+                f"{worksheet.title}: yetishmayotgan ustunlar: "
+                f"{', '.join(sorted(missing))}{hint}"
             )
         return cls(worksheet.title, worksheet.id, headers)
 

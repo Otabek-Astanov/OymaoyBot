@@ -60,7 +60,8 @@ async def test_listing_is_a_durable_notification_with_separate_price(monkeypatch
     assert notification["kind"] == "publish_channel"
     assert notification["phone_id"] == identifier
     assert state.cleared
-    assert "yuborish navbatda" in msg.answer.call_args.args[0]
+    # No worker runs in this test, so the user is told the post is queued.
+    assert "navbatga qo'yildi" in msg.answer.call_args.args[0]
 
 
 @pytest.mark.asyncio
@@ -126,3 +127,98 @@ async def test_long_model_versions_have_bounded_callbacks(monkeypatch):
     )
     assert len(callback.encode()) <= 64
     assert version in state.data["version_choices"].values()
+
+
+def _listing(monkeypatch, *, post_id, delivery):
+    from bot_harid.handlers import harid_flow as flow
+    import config
+
+    monkeypatch.setattr(config, "CHANNEL_ID", "-100123")
+    monkeypatch.setattr(config, "DRIVE_FOLDER_ID", "")
+    identifier = str(uuid4())
+    phone = {"Telefon ID": identifier, "Holati": "Sotuvda", "Kanal post ID": post_id}
+    monkeypatch.setattr(flow.sheets_service, "get_phone_by_id", Mock(return_value=phone))
+    write = Mock(return_value=True)
+    monkeypatch.setattr(flow.sheets_service, "update_phone", write)
+    monkeypatch.setattr(flow, "wait_for_delivery", AsyncMock(return_value=delivery))
+    state = State(phone_id=identifier, operation_id=str(uuid4()), condition="Yaxshi")
+    msg = message("700")
+    return flow, state, msg, write
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("post_id", "delivery", "expected"),
+    [
+        ("", {"state": "sent"}, "E'lon kanalga joylandi"),
+        ("9", {"state": "sent"}, "Kanaldagi e'lon yangilandi"),
+        ("", {"state": "unknown"}, "E'lon kanalga joylanmadi"),
+    ],
+)
+async def test_listing_reports_the_real_channel_outcome(
+    monkeypatch, post_id, delivery, expected
+):
+    flow, state, msg, write = _listing(monkeypatch, post_id=post_id, delivery=delivery)
+    await flow.post_sell_price_received(msg, state, SimpleNamespace(id=123))
+    texts = [c.args[0] for c in msg.answer.call_args_list]
+    assert "joylanmoqda" in texts[0]  # shown before the slow work starts
+    msg.answer.return_value.delete.assert_awaited()  # and removed afterwards
+    assert expected in texts[-1]
+    assert state.cleared
+
+
+@pytest.mark.asyncio
+async def test_listing_carries_the_chosen_condition_to_the_channel(monkeypatch):
+    flow, state, msg, write = _listing(monkeypatch, post_id="", delivery=None)
+    await flow.post_sell_price_received(msg, state, SimpleNamespace(id=123))
+    assert write.call_args.kwargs["notifications"][0]["data"]["condition"] == "Yaxshi"
+
+
+@pytest.mark.asyncio
+async def test_typed_condition_must_be_a_known_value():
+    from bot_harid.handlers import harid_flow as flow
+
+    state = State()
+    msg = message("zo'r")
+    await flow.post_condition_text(msg, state)
+    assert "condition" not in state.data
+    assert "tugmadan tanlang" in msg.answer.call_args.args[0]
+    await flow.post_condition_text(message("👍 yaxshi"), state)
+    assert state.data["condition"] == "Yaxshi"
+
+
+@pytest.mark.asyncio
+async def test_answered_inline_question_keeps_text_and_drops_buttons():
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from bot_common.handler_support import close_prompt
+
+    markup = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="128 GB", callback_data="mem:128 GB")]]
+    )
+    prompt = SimpleNamespace(
+        text="Xotira", html_text="💾 <b>Xotira</b>", reply_markup=markup, edit_text=AsyncMock()
+    )
+    await close_prompt(SimpleNamespace(data="mem:128 GB", message=prompt))
+    prompt.edit_text.assert_awaited_once_with(
+        "💾 <b>Xotira</b>\n✅ <b>128 GB</b>", reply_markup=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_wait_for_delivery_returns_when_the_worker_finishes(monkeypatch):
+    from bot_common import handler_support
+    from services import notification_queue
+    from services.google_sheets import sheets_service
+
+    states = iter([{"state": "pending"}, {"state": "sending"}, {"state": "sent"}])
+    monkeypatch.setattr(sheets_service, "notification_status", lambda *a: next(states))
+
+    async def direct(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(handler_support.io_worker, "call", direct)
+    monkeypatch.setattr(notification_queue, "_running_workers", 0)
+    assert await handler_support.wait_for_delivery("op", interval=0) is None
+    monkeypatch.setattr(notification_queue, "_running_workers", 1)
+    status = await handler_support.wait_for_delivery("op", interval=0)
+    assert status == {"state": "sent"}

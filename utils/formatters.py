@@ -259,6 +259,43 @@ def build_sotuv_phone_info(phone: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def build_sale_summary(data: dict[str, Any]) -> str:
+    """Confirmation card shown before a sale is saved."""
+    lines = [
+        "📋 <b>SOTUVNI TASDIQLANG:</b>\n",
+        f"📱 Model: <b>{safe_html(_model(data))}</b>",
+    ]
+    imei = _value(data, "imei", "imei_6")
+    if imei:
+        lines.append(f"🔍 IMEI / Seriya: <code>{safe_html(imei)}</code>")
+    lines += ["", f"💰 Sotuv narxi: <b>{safe_html(_value(data, 'sell_price'))}$</b>"]
+    buyer = _value(data, "buyer_name")
+    phone = _value(data, "buyer_phone")
+    if buyer and buyer != "Mijoz":
+        suffix = f" ({safe_html(phone)})" if phone else ""
+        lines.append(f"👤 Xaridor: <b>{safe_html(buyer)}</b>{suffix}")
+    elif phone:
+        lines.append(f"📞 Xaridor tel: <b>{safe_html(phone)}</b>")
+    lines.append(f"💳 To'lov turi: <b>{safe_html(_value(data, 'payment_type'))}</b>")
+    if data.get("payment_type") == "Qarz":
+        lines += [
+            f"🤝 Hamkor: <b>{safe_html(_value(data, 'partner_name'))}</b>",
+            f"💵 Boshlang'ich to'lov: <b>{safe_html(_value(data, 'initial_payment', default='0'))}$</b>",
+            f"📉 Hamkor qarzi: <b>{safe_html(_value(data, 'partner_debt', default='0'))}$</b>",
+        ]
+    lines.append(
+        f"\n🎁 Jami KPI: <b>{safe_html(_value(data, 'seller_kpi', default='0'))}$</b>"
+    )
+    for seller in data.get("sellers") or ():
+        if isinstance(seller, dict):
+            lines.append(
+                f"   {safe_html(_value(seller, 'name', default='Xodim'))}: "
+                f"{safe_html(_value(seller, 'kpi', default='0'))}$"
+            )
+    lines.append("\n<b>Ma'lumotlar to'g'rimi?</b>")
+    return "\n".join(lines)
+
+
 def build_sell_group_caption(data: dict[str, Any]) -> str:
     fields = (
         ("📱 Model", "model", "Model"),

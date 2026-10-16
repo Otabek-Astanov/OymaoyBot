@@ -13,13 +13,13 @@ venv/bin/python -m pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
-`.env` ichida tokenlar, admin ID, `SPREADSHEET_ID`, credential manzili va `FSM_STORAGE_URL` ni kiriting. Mahalliy ishga tushishda fayl manzillarini `/app/...` o'rniga mavjud mahalliy manzilga almashtiring. Masalan, `OPERATION_DB_PATH=data/operations.sqlite`, `GOOGLE_SERVICE_ACCOUNT_FILE=credentials.json`, `GOOGLE_OAUTH_TOKEN_FILE=token.json`, `MEDIA_DIR=media`. Redis serveri majburiy; xotiradagi FSM ga yashirin o'tish yo'q. Token va kalitlarni Gitga kiritmang.
+`.env` ichida tokenlar, admin ID, `SPREADSHEET_ID`, credential manzili va `FSM_STORAGE_URL` ni kiriting. Mahalliy ishga tushishda fayl manzillarini `/app/...` o'rniga mavjud mahalliy manzilga almashtiring. Masalan, `OPERATION_DB_PATH=data/operations.sqlite`, `GOOGLE_SERVICE_ACCOUNT_FILE=credentials.json`, `GOOGLE_OAUTH_TOKEN_FILE=token.json`, `MEDIA_DIR=media`. Redis majburiy: ulanmasa bot ishga tushmaydi, xotiradagi FSM ga yashirin o'tish yo'q. Faqat lokal sinov uchun `FSM_STORAGE_URL=memory://` yozish mumkin; bunda boshlangan oqimlar restartda yo'qoladi. Token va kalitlarni Gitga kiritmang.
 
 Google servislar import vaqtida tarmoqqa chiqmaydi. Runtime avval konfiguratsiyani tekshiradi, keyin Redis va Google schemasining haqiqiy tayyorligini tekshiradi. Mavjud schema ishga tushishda avtomatik o'zgartirilmaydi.
 
 ## Google jadvalini tayyorlash
 
-Sakkizta varaq kerak: `Xodimlar`, `Telefonlar`, `Chiqimlar`, `Kirimlar`, `Hamkorlar`, `Modellar`, `Shablonlar`, `Amallar`. Ustunlar `config.DEFAULT_HEADERS` da berilgan. Telefon yozuvi uchun `Telefon ID`, e'lon uchun `Elon narxi ($)` alohida ustunlardir. IMEI matn sifatida saqlanadi.
+Yettita varaq kerak: `Xodimlar`, `Telefonlar`, `Chiqimlar`, `Kirimlar`, `Hamkorlar`, `Modellar`, `Shablonlar`. Amallar jurnali lokal SQLite da (`OPERATION_DB_PATH`) turadi; `prepare` `Amallar` varag'ini yaratmaydi, eski jadvalda u bo'lsa yozuvlar unga ham qo'shiladi. Ustunlar `config.DEFAULT_HEADERS` da berilgan. `Telefon ID` majburiy: qayta xarid qilingan IMEI har safar alohida ID oladi. Ustun yo'q bo'lsa bot ishga tushmaydi; mavjud jadvalga uni `prepare` qo'shadi va bo'sh ID larni to'ldiradi. E'lon uchun `Elon narxi ($)` ixtiyoriy ustun. IMEI matn sifatida saqlanadi.
 
 Avval ishlab chiqarish jadvalining nusxasida tekshiring:
 

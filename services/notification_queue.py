@@ -15,6 +15,19 @@ from uuid import UUID, uuid5
 from services.telegram_poster import NotificationDeliveryError, TelegramPosterService
 
 logger = logging.getLogger(__name__)
+_running_workers = 0
+_wake: asyncio.Event | None = None
+
+
+def delivery_active() -> bool:
+    """True while a worker loop runs; handlers wait for delivery only then."""
+    return _running_workers > 0
+
+
+def wake_delivery() -> None:
+    """Start the next delivery round now instead of after the poll interval."""
+    if _wake is not None:
+        _wake.set()
 
 
 @dataclass(frozen=True)
@@ -255,11 +268,21 @@ class NotificationWorker:
         return delivered
 
     async def run(self) -> None:
-        while True:
-            try:
-                await self.process_once()
-            except Exception as exc:
-                logger.warning(
-                    "Notification queue unavailable (%s)", type(exc).__name__
-                )
-            await asyncio.sleep(self.poll_interval)
+        global _running_workers, _wake
+        _running_workers += 1
+        _wake = asyncio.Event()
+        try:
+            while True:
+                try:
+                    await self.process_once()
+                except Exception as exc:
+                    logger.warning(
+                        "Notification queue unavailable (%s)", type(exc).__name__
+                    )
+                try:
+                    await asyncio.wait_for(_wake.wait(), timeout=self.poll_interval)
+                except asyncio.TimeoutError:
+                    pass
+                _wake.clear()
+        finally:
+            _running_workers -= 1

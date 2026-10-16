@@ -1,6 +1,7 @@
 """Google Sheets domain service: explicit startup, exact money, one atomic writer."""
 
 import logging
+import re
 import time
 from datetime import datetime
 from decimal import Decimal
@@ -30,6 +31,11 @@ WRITE_ROLES = {"admin", "sotuvchi", "hisobchi", "rahbariyat"}
 ACCOUNTING_ROLES = {"admin", "hisobchi"}
 
 
+# Only links our Drive upload produced become clickable formulas; any other
+# text stays a plain string cell and is never evaluated by Sheets.
+DRIVE_FILE_LINK = re.compile(r"https://drive\.google\.com/file/d/[A-Za-z0-9_-]+/view(\?[A-Za-z0-9_=&.-]*)?")
+
+
 def get_tashkent_now() -> datetime:
     return datetime.now(ZoneInfo("Asia/Tashkent"))
 
@@ -52,6 +58,8 @@ class GoogleSheetsService:
         self.journal = None
         self.coordinator = None
         self._worksheets = {}
+        self._schemas = {}
+        self._worksheets_listed = False
         self._cache = {}
         self._phones_cache = None
         self._phones_cache_time = 0.0
@@ -66,6 +74,20 @@ class GoogleSheetsService:
                     config.GOOGLE_SERVICE_ACCOUNT_FILE, scopes=SCOPES
                 )
                 self.client = gspread.authorize(credentials)
+                from urllib3.util import Retry
+                from requests.adapters import HTTPAdapter
+
+                adapter = HTTPAdapter(
+                    max_retries=Retry(
+                        total=3,
+                        backoff_factor=0.3,
+                        status_forcelist=[500, 502, 503, 504],
+                    )
+                )
+                session = getattr(self.client.http_client, "session", None)
+                if session is not None:
+                    session.mount("https://", adapter)
+                    session.mount("http://", adapter)
                 self.client.set_timeout(config.IO_TIMEOUT_SECONDS)
                 self.spreadsheet = self.client.open_by_key(config.SPREADSHEET_ID)
             except Exception as exc:
@@ -106,10 +128,20 @@ class GoogleSheetsService:
         self.client = None
         self.spreadsheet = None
         self._worksheets.clear()
+        self._worksheets_listed = False
+        self._schemas.clear()
         self.reload_cache()
 
     def is_connected(self) -> bool:
         return self.spreadsheet is not None
+
+    def _photo_cell(self, url, label):
+        """Show a Drive photo as "📷 imei_….jpg" like the original sheet rows."""
+        url = str(url or "").strip()
+        if not DRIVE_FILE_LINK.fullmatch(url):
+            return url
+        label = "📷 " + re.sub(r"[^A-Za-z0-9_.-]", "", label)
+        return Formula(f'=HYPERLINK("{url}"{self.formula_sep}"{label}")')
 
     def _require_connected(self):
         if not self.is_connected():
@@ -127,9 +159,13 @@ class GoogleSheetsService:
             raise StorageReadError(f"{title}: varaqni o'qib bo'lmadi") from exc
 
     def _schema(self, title):
+        if title in self._schemas:
+            return self._schemas[title]
         ws = self._worksheet(title)
         try:
-            return SheetSchema.from_worksheet(ws, config.DEFAULT_HEADERS[title])
+            schema = SheetSchema.from_worksheet(ws, config.DEFAULT_HEADERS[title])
+            self._schemas[title] = schema
+            return schema
         except SchemaError:
             raise
         except Exception as exc:
@@ -154,6 +190,13 @@ class GoogleSheetsService:
         return self._safe_get_all_records(self._worksheet(title))
 
     def readiness(self):
+        self._require_connected()
+        try:
+            for ws in self.spreadsheet.worksheets():
+                self._worksheets[ws.title] = ws
+            self._worksheets_listed = True
+        except Exception:
+            pass
         titles = [
             t
             for t in config.DEFAULT_HEADERS
@@ -164,6 +207,11 @@ class GoogleSheetsService:
 
     def _has_sheet(self, title: str) -> bool:
         if not self.spreadsheet:
+            return False
+        if title in self._worksheets:
+            return True
+        if self._worksheets_listed:
+            # Runtime never creates sheets; avoid a metadata call per write.
             return False
         try:
             return title in [ws.title for ws in self.spreadsheet.worksheets()]
@@ -211,9 +259,25 @@ class GoogleSheetsService:
         return rows
 
     def check_member(self, telegram_id, force_refresh=False, *, fresh=False):
+        """The only access rule: a Xodimlar row decides; ADMIN_IDS only bootstraps.
+
+        A listed admin who is marked inactive stays inactive everywhere. When the
+        sheet cannot be read, navigation uses the last read rows and then ADMIN_IDS;
+        ``fresh=True`` (financial authorization) never falls back.
+        """
+        try:
+            rows = self.get_staff_list(False, force_refresh, fresh=fresh)
+        except SchemaError:
+            raise
+        except Exception:
+            cached = self._cache.get(config.SHEET_STAFF)
+            if fresh or not (cached or int(telegram_id) in config.ADMIN_IDS):
+                raise
+            logger.warning("Xodimlar o'qilmadi; oxirgi ma'lumot bilan tekshirildi")
+            rows = cached[1] if cached else []
         matches = [
             row
-            for row in self.get_staff_list(False, force_refresh, fresh=fresh)
+            for row in rows
             if str(row.get("Telegram ID", "")).strip() == str(telegram_id)
         ]
         if len(matches) > 1:
@@ -324,6 +388,19 @@ class GoogleSheetsService:
                 return row
         return None
 
+    @staticmethod
+    def _imei_matches(records, imei):
+        matches = [row for row in records if row["IMEI"] == imei]
+        if len(matches) > 1:
+            active = [
+                r
+                for r in matches
+                if str(r.get("Holati", "")).strip().casefold() == "sotuvda"
+            ]
+            if len(active) == 1:
+                return active
+        return matches
+
     def _phone(self, reference):
         records = list(self._load_phones_cache(True).values())
         matches = [row for row in records if str(row["_row_index"]) == str(reference)]
@@ -334,17 +411,7 @@ class GoogleSheetsService:
                 if str(row.get("Telefon ID", "")).strip() == str(reference)
             ]
         if not matches:
-            clean_ref = str(reference).strip().lstrip("'")
-            imei_matches = [row for row in records if row["IMEI"] == clean_ref]
-            if len(imei_matches) > 1:
-                active = [
-                    r
-                    for r in imei_matches
-                    if str(r.get("Holati", "")).strip().casefold() == "sotuvda"
-                ]
-                matches = active if len(active) == 1 else imei_matches
-            else:
-                matches = imei_matches
+            matches = self._imei_matches(records, str(reference).strip().lstrip("'"))
         if len(matches) > 1:
             active = [
                 r
@@ -362,6 +429,9 @@ class GoogleSheetsService:
         self._require_connected()
         if self.coordinator is None:
             raise StorageUnavailable("Operatsiya jurnali ishga tushirilmagan")
+        # Column indexes of a financial write come from headers read now, never
+        # from the status-check cache: a moved column would shift every value.
+        self._schemas.clear()
         return self.coordinator.run(
             operation_id, kind, actor_id, payload, notifications, builder
         )
@@ -434,8 +504,12 @@ class GoogleSheetsService:
                 ),
                 "Harid to'lov turi": payment,
                 "Harid qarz summasi ($)": debt,
-                "IMEI rasmi": data.get("imei_photo_url", ""),
-                "Telefon rasmi": data.get("phone_photo_url", ""),
+                "IMEI rasmi": self._photo_cell(
+                    data.get("imei_photo_url"), f"imei_{imei}.jpg"
+                ),
+                "Telefon rasmi": self._photo_cell(
+                    data.get("phone_photo_url"), f"phone_{imei}.jpg"
+                ),
                 "Remont xarajati ($)": ZERO,
                 "Jami tannarx ($)": price,
                 "Holati": "Sotuvda",
@@ -518,6 +592,11 @@ class GoogleSheetsService:
                 if name in sanitized and sanitized[name] in (None, "", 0):
                     raise BusinessRuleError(
                         "Mavjud post/rasm qiymatini bo'sh natija bilan o'chirmang"
+                    )
+            for name, prefix in (("IMEI rasmi", "imei"), ("Telefon rasmi", "phone")):
+                if name in sanitized:
+                    sanitized[name] = self._photo_cell(
+                        sanitized[name], f"{prefix}_{phone['IMEI']}.jpg"
                     )
             requests = self._schema(config.SHEET_PHONES).updates(
                 phone["_row_index"], sanitized
@@ -1390,6 +1469,14 @@ class GoogleSheetsService:
             "Operator natijani mustaqil tekshirdi",
             reset_attempts=not sent,
         )
+
+    def notification_status(self, operation_id, index=0):
+        if self.journal is None:
+            raise StorageUnavailable("Operatsiya jurnali ishga tushirilmagan")
+        item = self.journal.get_notification(operation_id, index)
+        if item is None:
+            return None
+        return {key: item[key] for key in ("state", "attempts", "error")}
 
     def notification_statuses(self):
         if self.journal is None:

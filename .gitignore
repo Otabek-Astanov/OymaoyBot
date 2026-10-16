@@ -27,6 +27,10 @@ wheels/
 .env
 credentials.json
 *.json
+# Renamed OAuth token backups (e.g. token.json.client_bak) still hold secrets
+token.json*
+*.bak
+*_bak
 !.env.example
 
 # Logs

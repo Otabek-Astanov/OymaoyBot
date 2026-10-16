@@ -208,18 +208,27 @@ async def run(features: tuple[str, ...] | None = None) -> None:
     lock = WriterProcessLock(str(config.OPERATION_DB_PATH) + ".lock")
     try:
         lock.acquire()
+        # Redis must be reachable before polling starts. A volatile FSM is used
+        # only when FSM_STORAGE_URL explicitly says memory:// (local testing).
+        use_memory = config.fsm_uses_memory()
+        if use_memory:
+            logger.warning(
+                "FSM_STORAGE_URL=memory://: bot holatlari xotirada, restartda yo'qoladi"
+            )
         for _ in grouped:
-            try:
-                client = Redis.from_url(
-                    config.FSM_STORAGE_URL, socket_connect_timeout=2, socket_timeout=3
-                )
-                await asyncio.wait_for(client.ping(), timeout=2)
-                redis_clients.append(client)
-            except Exception as exc:
-                logger.warning(
-                    "Redis ulanmadi (%s). Lokal MemoryStorage ishlatiladi.", exc
-                )
+            if use_memory:
                 redis_clients.append(None)
+                continue
+            client = Redis.from_url(
+                config.FSM_STORAGE_URL, socket_connect_timeout=5, socket_timeout=10
+            )
+            redis_clients.append(client)
+            try:
+                await asyncio.wait_for(client.ping(), timeout=10)
+            except Exception as exc:
+                raise RuntimeStartupError(
+                    f"Redis ulanmadi ({type(exc).__name__}); FSM_STORAGE_URL ni tekshiring"
+                ) from None
 
         from services.google_drive import drive_service
         from services.google_sheets import sheets_service

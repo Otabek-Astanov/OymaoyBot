@@ -10,7 +10,7 @@ Python 3.12 va Docker Compose v2 kerak. Alohida test botlari, nusxa Sheets va al
 
 ## Schema va konfiguratsiya
 
-Runtime schema qo'shmaydi. Mavjud jadvalga `Telefon ID`, `Elon narxi ($)` va `Amallar` kerak. Avval jadval nusxasida:
+Runtime schema qo'shmaydi. Mavjud jadvalga `Telefon ID` (majburiy) va `Elon narxi ($)` kerak; `Telefon ID` siz yangi kod ishga tushmaydi. `Amallar` varag'i yaratilmaydi, jurnal lokal SQLite da. Avval jadval nusxasida:
 
 ```bash
 venv/bin/python scripts/manage_data.py inspect
@@ -64,7 +64,7 @@ docker compose run --rm --no-deps bot python -c "import sqlite3; src=sqlite3.con
 
 ## Noaniq amallar va tiklash
 
-Mahalliy `Yuborilmoqda` amallar restartda `Noaniq` bo'ladi. Google `Amallar` da ayni UUID borligi qayta o'qilib tasdiqlansa yakunlangan natija tiklanadi. UUID yo'qligi o'z-o'zidan so'rov hech qachon qo'llanmaganini isbotlamaydi; bot avtomatik qayta commit qilmaydi. Noaniq yozuvga zid moliyaviy amal bloklangan bo'ladi.
+Mahalliy `Yuborilmoqda` amallar restartda `Noaniq` bo'ladi. Yozilgan qiymatlar (eski jadvalda `Amallar` varag'i bo'lsa, undagi ayni UUID ham) qayta o'qilib tasdiqlansa yakunlangan natija tiklanadi. UUID yo'qligi o'z-o'zidan so'rov hech qachon qo'llanmaganini isbotlamaydi; bot avtomatik qayta commit qilmaydi. Noaniq yozuvga zid moliyaviy amal bloklangan bo'ladi.
 
 ```bash
 venv/bin/python scripts/manage_data.py reconcile

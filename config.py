@@ -94,6 +94,11 @@ def load_runtime_config(env_file: str | Path | None = BASE_DIR / ".env") -> None
     _refresh_settings()
 
 
+def fsm_uses_memory() -> bool:
+    """Only an explicit memory:// URL selects the volatile FSM; it is never a fallback."""
+    return urlparse(FSM_STORAGE_URL).scheme == "memory"
+
+
 def validate_runtime_config(features: tuple[str, ...] | None = None) -> None:
     features = FEATURES if features is None else features
     if not features or any(feature not in FEATURES for feature in features):
@@ -107,9 +112,11 @@ def validate_runtime_config(features: tuple[str, ...] | None = None) -> None:
     if not Path(GOOGLE_SERVICE_ACCOUNT_FILE).is_file():
         raise ConfigurationError("GOOGLE_SERVICE_ACCOUNT_FILE fayli topilmadi")
     parsed = urlparse(FSM_STORAGE_URL)
-    if parsed.scheme not in {"redis", "rediss"} or not parsed.hostname:
+    if not fsm_uses_memory() and (
+        parsed.scheme not in {"redis", "rediss"} or not parsed.hostname
+    ):
         raise ConfigurationError(
-            "FSM_STORAGE_URL redis:// yoki rediss:// manzil bo'lishi kerak"
+            "FSM_STORAGE_URL redis://, rediss:// yoki lokal test uchun memory:// bo'lishi kerak"
         )
     if FSM_TTL_SECONDS <= 0 or IO_TIMEOUT_SECONDS <= 0 or IO_MAX_PENDING <= 0:
         raise ConfigurationError(
@@ -178,6 +185,7 @@ DEFAULT_HEADERS = {
         "Jami tannarx ($)",
         # Kanal post
         "Kanal post ID",
+        "Elon narxi ($)",
         # Sotuv ma'lumotlari
         "Sotuv narxi ($)",
         "Xaridor ismi",
@@ -193,7 +201,6 @@ DEFAULT_HEADERS = {
         "Sof foyda ($)",
         "Holati",
         "Telefon ID",
-        "Elon narxi ($)",
     ],
     SHEET_EXPENSES: [
         "ID",
