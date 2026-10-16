@@ -17,29 +17,25 @@ from utils.formatters import safe_html
 def menu_for(role, features):
     features = set(features)
     rows = []
-    has_balance = role in {"Admin", "Hisobchi", "Rahbariyat", "Investor"}
-    harid_added = False
     if role in {"Admin", "Hisobchi", "Rahbariyat", "Sotuvchi"}:
         if "harid" in features:
-            harid_added = True
-            rows.append([KeyboardButton(text="📥 Harid qilish")])
-            if has_balance:
-                rows.append([
-                    KeyboardButton(text="💰 Balance"),
-                    KeyboardButton(text="📦 Karobka"),
-                ])
-                rows.append([KeyboardButton(text="📢 Telegram kanalga e'lon berish")])
-            else:
-                rows.append([
+            rows += [
+                [KeyboardButton(text="📥 Harid qilish")],
+                [
                     KeyboardButton(text="📢 Telegram kanalga e'lon berish"),
                     KeyboardButton(text="📦 Karobka"),
-                ])
+                ],
+            ]
         if "sotuv" in features:
             rows.append([KeyboardButton(text="📱 Yangi sotuvni rasmiylashtirish")])
-    if role in {"Admin", "Hisobchi"} and "harajat" in features:
-        rows.append([KeyboardButton(text="📈 Kirim"), KeyboardButton(text="📉 Chiqim")])
-    if has_balance and not harid_added:
-        rows.append([KeyboardButton(text="💰 Balance")])
+    # Balance is part of the finance (Harajat) bot only, as in the original spec.
+    if "harajat" in features:
+        if role in {"Admin", "Hisobchi"}:
+            rows.append(
+                [KeyboardButton(text="📈 Kirim"), KeyboardButton(text="📉 Chiqim")]
+            )
+        if role in {"Admin", "Hisobchi", "Rahbariyat", "Investor"}:
+            rows.append([KeyboardButton(text="💰 Balance")])
     return (
         ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
         if rows
@@ -147,11 +143,13 @@ def create_navigation_router(features):
         )
         await message.answer(text or "Yakunlanmagan amal yo‘q.")
 
-    @router.message(F.text == "💰 Balance")
-    async def balance(message: types.Message):
-        from bot_harajat.handlers.harajat_flow import view_balance
+    if "harajat" in features:
 
-        await view_balance(message)
+        @router.message(F.text == "💰 Balance")
+        async def balance(message: types.Message):
+            from bot_harajat.handlers.harajat_flow import view_balance
+
+            await view_balance(message)
 
     @router.channel_post(Command("id"))
     @router.message(Command("id"))

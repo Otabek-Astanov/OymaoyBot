@@ -92,7 +92,7 @@ class AccessMiddleware(BaseMiddleware):
             else WRITE_ROLES
         )
         feature_allowed = not (
-            (finance and "harajat" not in self.features)
+            ((finance or text == "💰 Balance") and "harajat" not in self.features)
             or (purchase and "harid" not in self.features)
             or (sale and "sotuv" not in self.features)
         )

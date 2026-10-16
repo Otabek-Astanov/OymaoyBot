@@ -130,3 +130,21 @@ def test_cached_access_never_lets_a_revoked_user_write(staff_storage):
             operation_id=str(uuid4()),
             actor_id=555,
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("features", "allowed"), [({"harid"}, False), ({"harajat"}, True)])
+async def test_balance_button_needs_the_finance_feature(monkeypatch, features, allowed):
+    from bot_common import access
+
+    monkeypatch.setattr(
+        access.sheets_service, "check_member", Mock(return_value=(True, "Admin", "A"))
+    )
+    event = SimpleNamespace(
+        from_user=SimpleNamespace(id=1), text="💰 Balance", answer=AsyncMock()
+    )
+    handler = AsyncMock()
+    await access.AccessMiddleware(features)(handler, event, {})
+    assert handler.called is allowed
+    if not allowed:
+        assert "ruxsat berilmagan" in event.answer.call_args.args[0]
