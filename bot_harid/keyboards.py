@@ -8,11 +8,8 @@ from aiogram.types import (
 
 def main_menu_kb() -> ReplyKeyboardMarkup:
     kb = [
-        [KeyboardButton(text="📥 Harid qilish")],
-        [
-            KeyboardButton(text="📢 Telegram kanalga e'lon berish"),
-            KeyboardButton(text="📦 Karobka"),
-        ],
+        [KeyboardButton(text="📥 Harid qilish"), KeyboardButton(text="📦 Karobka")],
+        [KeyboardButton(text="📢 Telegram kanalga e'lon berish")],
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, is_persistent=True)
 

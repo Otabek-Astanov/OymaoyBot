@@ -20,11 +20,11 @@ def menu_for(role, features):
     if role in {"Admin", "Hisobchi", "Rahbariyat", "Sotuvchi"}:
         if "harid" in features:
             rows += [
-                [KeyboardButton(text="📥 Harid qilish")],
                 [
-                    KeyboardButton(text="📢 Telegram kanalga e'lon berish"),
+                    KeyboardButton(text="📥 Harid qilish"),
                     KeyboardButton(text="📦 Karobka"),
                 ],
+                [KeyboardButton(text="📢 Telegram kanalga e'lon berish")],
             ]
         if "sotuv" in features:
             rows.append([KeyboardButton(text="📱 Yangi sotuvni rasmiylashtirish")])

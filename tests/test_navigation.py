@@ -36,11 +36,9 @@ def test_balance_lives_only_in_the_finance_bot():
         assert "💰 Balance" not in _buttons(menu_for(role, {"sotuv"}))
         assert "💰 Balance" in _buttons(menu_for(role, {"harajat"}))
     assert "💰 Balance" not in _buttons(main_menu_kb())
-    assert _buttons(menu_for("Admin", {"harid"})) == [
-        "📥 Harid qilish",
-        "📢 Telegram kanalga e'lon berish",
-        "📦 Karobka",
-    ]
+    layout = [["📥 Harid qilish", "📦 Karobka"], ["📢 Telegram kanalga e'lon berish"]]
+    assert [[b.text for b in row] for row in menu_for("Admin", {"harid"}).keyboard] == layout
+    assert [[b.text for b in row] for row in main_menu_kb().keyboard] == layout
 
 
 def test_investor_in_a_bot_without_finance_gets_no_menu():
