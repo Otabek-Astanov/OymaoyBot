@@ -96,6 +96,9 @@ async def test_sale_always_queues_fresh_channel_lookup(monkeypatch):
     monkeypatch.setattr(config, "GROUP_SOTUV_ID", "")
     write = Mock(return_value=(True, Decimal("20.00")))
     monkeypatch.setattr(flow.sheets_service, "record_sale", write)
+    monkeypatch.setattr(
+        flow.sheets_service, "get_phone_by_id", Mock(return_value={"Holati": "Sotuvda"})
+    )
     state = State(
         phone_id="phone-1",
         operation_id=str(uuid4()),

@@ -100,6 +100,9 @@ async def test_sale_failure_sends_no_notification(monkeypatch):
     monkeypatch.setattr(
         flow.sheets_service, "record_sale", Mock(return_value=(False, 0))
     )
+    monkeypatch.setattr(
+        flow.sheets_service, "get_phone_by_id", Mock(return_value={"Holati": "Sotuvda"})
+    )
     poster = SimpleNamespace(
         post_to_sell_group=AsyncMock(), mark_as_sold_on_channel=AsyncMock()
     )

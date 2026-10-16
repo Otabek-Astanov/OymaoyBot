@@ -40,7 +40,11 @@ from bot_harid.keyboards import (
 )
 from services.google_sheets import sheets_service
 from services.google_drive import drive_service
-from utils.formatters import build_purchase_summary
+from utils.formatters import (
+    build_changed_phone_notice,
+    build_duplicate_purchase_notice,
+    build_purchase_summary,
+)
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -328,17 +332,7 @@ async def imei_6_entered(message: types.Message, state: FSMContext):
         raise BusinessRuleError(
             "IMEI/seriya 4–64 ta harf yoki raqamdan iborat bo‘lsin."
         )
-    try:
-        phone = await io_worker.call(
-            sheets_service.get_phone_by_imei, imei, fresh=True, exact=True
-        )
-    except AmbiguousPhone as exc:
-        if any((p.get("Holati") != "Sotildi" for p in exc.matches)):
-            raise BusinessRuleError(
-                "Bu IMEI bo‘yicha sotilmagan telefon mavjud."
-            ) from exc
-        phone = None
-    if phone and phone.get("Holati") != "Sotildi":
+    if await unsold_phone_with_imei(imei):
         raise BusinessRuleError("Bu IMEI bo‘yicha sotilmagan telefon mavjud.")
     await state.update_data(imei=imei, imei_6=imei)
     await state.set_state(HaridStates.waiting_box)
@@ -443,6 +437,14 @@ async def confirm_purchase_handler(message: types.Message, state: FSMContext, bo
     if message.text == "❌ Yo'q":
         await state.clear()
         await message.answer("❌ Xarid bekor qilindi.", reply_markup=main_menu_kb())
+        return
+    # Someone may have entered the same IMEI while this flow was open.
+    existing = await unsold_phone_with_imei((await state.get_data()).get("imei", ""))
+    if existing:
+        await state.clear()
+        await message.answer(
+            build_duplicate_purchase_notice(existing), reply_markup=main_menu_kb()
+        )
         return
     identifier = await operation_id(state)
     async with progress(message, "Ma'lumotlar saqlanmoqda, kutib turing..."):
@@ -704,6 +706,23 @@ async def confirm_karobka_update(message: types.Message, state: FSMContext):
     data = await state.get_data()
     if not data.get("phone_id"):
         raise BusinessRuleError("Telefonni qayta tanlang.")
+    current = await io_worker.call(
+        sheets_service.get_phone_by_id, data["phone_id"], fresh=True
+    )
+    if not current or current.get("Holati") != "Sotuvda":
+        await state.clear()
+        await message.answer(
+            build_changed_phone_notice("Karobka holati", current),
+            reply_markup=main_menu_kb(),
+        )
+        return
+    if str(current.get("Karobka", "")).lower() in {"ha", "bor"}:
+        await state.clear()
+        await message.answer(
+            "ℹ️ Bu telefonning karobkasi allaqachon belgilangan.",
+            reply_markup=main_menu_kb(),
+        )
+        return
     await commit(
         state,
         message.from_user.id,
@@ -721,6 +740,19 @@ async def invalid_confirm_karobka(message: types.Message):
     await message.answer(
         "Iltimos, pastdagi tugmalardan birini tanlang.", reply_markup=yes_no_kb()
     )
+
+
+async def unsold_phone_with_imei(imei):
+    """The in-stock phone with this IMEI, read fresh; None when it is free."""
+    if not imei:
+        return None
+    try:
+        phone = await io_worker.call(
+            sheets_service.get_phone_by_imei, imei, fresh=True, exact=True
+        )
+    except AmbiguousPhone as exc:
+        return next((p for p in exc.matches if p.get("Holati") != "Sotildi"), None)
+    return phone if phone and phone.get("Holati") != "Sotildi" else None
 
 
 async def set_model_and_photo(message, state, version, kind):
@@ -812,9 +844,12 @@ async def queue_listing(message, state, bot):
     if not phone and data.get("imei"):
         phone = await io_worker.call(sheets_service.get_phone_by_imei, data["imei"], fresh=True)
     if not phone or phone.get("Holati") != "Sotuvda":
-        raise BusinessRuleError(
-            "Sotilgan yoki mavjud bo‘lmagan telefonga e’lon berib bo‘lmaydi."
+        # Sold or removed while this listing was being prepared: end the flow.
+        await state.clear()
+        await message.answer(
+            build_changed_phone_notice("E'lon", phone), reply_markup=main_menu_kb()
         )
+        return
     reference = phone["Telefon ID"]
     had_post = bool(str(phone.get("Kanal post ID") or "").strip())
     async with progress(message, "E'lon kanalga joylanmoqda, kutib turing..."):

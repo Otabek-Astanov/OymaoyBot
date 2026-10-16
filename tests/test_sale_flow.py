@@ -78,6 +78,9 @@ def _sale(monkeypatch, *, post_id, delivery):
         flow.sheets_service, "record_sale", Mock(return_value=(True, Decimal("20")))
     )
     monkeypatch.setattr(flow, "wait_for_delivery", AsyncMock(return_value=delivery))
+    monkeypatch.setattr(
+        flow.sheets_service, "get_phone_by_id", Mock(return_value={"Holati": "Sotuvda"})
+    )
     state = State(
         phone_id="phone-1",
         operation_id=str(uuid4()),

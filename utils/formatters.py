@@ -259,6 +259,63 @@ def build_sotuv_phone_info(phone: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _phone_details(phone: dict[str, Any], fields) -> list[str]:
+    lines = [
+        f"📱 Model: <b>{safe_html(_model(phone))}</b>",
+        f"🔍 IMEI / Seriya: <code>{safe_html(_value(phone, 'IMEI', default='-'))}</code>",
+    ]
+    for label, key, suffix in fields:
+        value = _value(phone, key)
+        if value and value != "Mijoz":
+            lines.append(f"{label}: <b>{safe_html(value)}{suffix}</b>")
+    return lines
+
+
+SOLD_FIELDS = (
+    ("📅 Sotilgan sana", "Sotilgan sana", ""),
+    ("👤 Xaridor", "Xaridor ismi", ""),
+    ("📞 Xaridor tel", "Xaridor telefoni", ""),
+    ("💰 Sotilgan narxi", "Sotuv narxi ($)", "$"),
+    ("👨‍💼 Sotgan xodim", "Do'kon sotuvchisi", ""),
+)
+
+
+def build_sold_phone_card(phone: dict[str, Any], footer: str = "") -> str:
+    lines = ["⚠️ <b>Bu qurilma allaqachon sotilgan.</b>\n", *_phone_details(phone, SOLD_FIELDS)]
+    if footer:
+        lines.append(f"\n<i>{safe_html(footer)}</i>")
+    return "\n".join(lines)
+
+
+def build_changed_phone_notice(action: str, phone: dict[str, Any] | None) -> str:
+    """Why a final "✅ Ha" was refused: the phone changed after the flow began."""
+    head = f"⚠️ <b>{action} saqlanmadi.</b>"  # action is a fixed label, not input
+    if not phone:
+        return f"{head}\nTelefon jadvalda topilmadi: o'chirilgan yoki o'zgartirilgan bo'lishi mumkin."
+    if phone.get("Holati") == "Sotildi":
+        return "\n".join(
+            [
+                f"{head} Bu telefon siz tasdiqlashingizdan oldin sotilgan.\n",
+                *_phone_details(phone, SOLD_FIELDS),
+            ]
+        )
+    return f"{head} Telefon holati endi «{safe_html(phone.get('Holati') or '-')}»."
+
+
+def build_duplicate_purchase_notice(phone: dict[str, Any]) -> str:
+    fields = (
+        ("📅 Harid sanasi", "Harid sanasi", ""),
+        ("👨‍💼 Qabul qilgan xodim", "Qabul qilgan xodim", ""),
+    )
+    return "\n".join(
+        [
+            "⚠️ <b>Xarid saqlanmadi.</b> Bu IMEI bilan sotuvdagi telefon allaqachon "
+            "kiritilgan (boshqa xodim siz bilan bir vaqtda kiritgan bo'lishi mumkin).\n",
+            *_phone_details(phone, fields),
+        ]
+    )
+
+
 def build_sale_summary(data: dict[str, Any]) -> str:
     """Confirmation card shown before a sale is saved."""
     lines = [

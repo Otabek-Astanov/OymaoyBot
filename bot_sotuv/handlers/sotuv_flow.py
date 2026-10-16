@@ -33,7 +33,12 @@ from bot_sotuv.keyboards import (
     yes_no_kb,
 )
 from services.google_sheets import sheets_service
-from utils.formatters import build_sale_summary, build_sotuv_phone_info
+from utils.formatters import (
+    build_changed_phone_notice,
+    build_sale_summary,
+    build_sold_phone_card,
+    build_sotuv_phone_info,
+)
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -91,7 +96,11 @@ async def imei_entered(message: types.Message, state: FSMContext):
         raise BusinessRuleError("Telefon topilmadi. IMEI ni tekshiring.")
     if phone.get("Holati") == "Sotildi":
         # Sent as HTML; error messages are escaped and would show raw tags.
-        await message.answer(sold_phone_card(phone))
+        await message.answer(
+            build_sold_phone_card(
+                phone, "Do'kondagi boshqa qurilmaning IMEI raqamini kiriting."
+            )
+        )
         return
     if phone.get("Holati") != "Sotuvda":
         raise BusinessRuleError("Bu qurilma sotuvga tayyor emas.")
@@ -107,27 +116,6 @@ async def imei_entered(message: types.Message, state: FSMContext):
     await answer_preview(
         message, build_sotuv_phone_info(phone), reply_markup=yes_no_kb()
     )
-
-
-def sold_phone_card(phone):
-    lines = [
-        "⚠️ <b>Bu qurilma allaqachon sotilgan.</b>\n",
-        f"📱 Model: <b>{safe_html(phone.get('Model', 'Qurilma'))}</b>",
-        f"🔍 IMEI / Seriya: <code>{safe_html(phone.get('IMEI', '-'))}</code>",
-    ]
-    details = (
-        ("📅 Sotilgan sana", phone.get("Sotilgan sana"), ""),
-        ("👤 Xaridor", phone.get("Xaridor ismi"), ""),
-        ("📞 Xaridor tel", phone.get("Xaridor telefoni"), ""),
-        ("💰 Sotilgan narxi", phone.get("Sotuv narxi ($)"), "$"),
-        ("👨‍💼 Sotgan xodim", phone.get("Do'kon sotuvchisi"), ""),
-    )
-    for label, value, suffix in details:
-        value = str(value or "").strip()
-        if value and value not in {"-", "Mijoz"}:
-            lines.append(f"{label}: <b>{safe_html(value)}{suffix}</b>")
-    lines.append("\n<i>Do'kondagi boshqa qurilmaning IMEI raqamini kiriting.</i>")
-    return "\n".join(lines)
 
 
 @router.message(SotuvStates.confirm_phone, F.text.in_(["✅ Ha", "❌ Yo'q"]))
@@ -470,6 +458,14 @@ async def confirm_sale_handler(message: types.Message, state: FSMContext, bot: B
     reference = data.get("phone_id")
     if not reference:
         raise BusinessRuleError("Qurilmani Telefon ID bo‘yicha qayta tanlang.")
+    # The flow may have been open for hours: re-read the phone right before saving.
+    current = await io_worker.call(sheets_service.get_phone_by_id, reference, fresh=True)
+    if not current or current.get("Holati") != "Sotuvda":
+        await state.clear()
+        await message.answer(
+            build_changed_phone_notice("Sotuv", current), reply_markup=main_menu_kb()
+        )
+        return
     identifier = await operation_id(state)
     notifications = []
     if config.GROUP_SOTUV_ID:
