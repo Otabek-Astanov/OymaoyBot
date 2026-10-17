@@ -379,6 +379,31 @@ class GoogleSheetsService:
             raise AmbiguousPhone(matches)
         return matches[0] if matches else None
 
+    def phone_photo_drive_id(self, phone_id):
+        """Drive id of the phone photo, else the IMEI photo (formulas hold the link)."""
+        from utils.formatters import extract_drive_file_id
+
+        values = self._worksheet(config.SHEET_PHONES).get_all_values(
+            value_render_option="FORMULA"
+        )
+        if not values:
+            return ""
+        headers = [str(h).strip() for h in values[0]]
+        id_col = headers.index("Telefon ID")
+        for row in values[1:]:
+            if id_col < len(row) and str(row[id_col]).strip() == str(phone_id):
+                for name in ("Telefon rasmi", "IMEI rasmi"):
+                    col = headers.index(name) if name in headers else None
+                    drive_id = (
+                        extract_drive_file_id(row[col])
+                        if col is not None and col < len(row)
+                        else ""
+                    )
+                    if drive_id:
+                        return drive_id
+                return ""
+        return ""
+
     def get_stock_phones(self):
         """Phones still for sale ("Sotuvda"), read fresh for the daily report."""
         return [

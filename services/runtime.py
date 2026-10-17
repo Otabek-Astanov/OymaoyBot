@@ -304,7 +304,12 @@ async def run(features: tuple[str, ...] | None = None) -> None:
             )
             for dispatcher, bot in zip(dispatchers, bots, strict=True)
         ]
-        notifications = NotificationWorker(io_worker, sheets_service, bots_by_id)
+        notifications = NotificationWorker(
+            io_worker,
+            sheets_service,
+            bots_by_id,
+            drive_service=drive_service if config.DRIVE_FOLDER_ID else None,
+        )
         workers = [notifications.run()]
         report = daily_report_worker(bots, grouped, sheets_service)
         if report is not None:

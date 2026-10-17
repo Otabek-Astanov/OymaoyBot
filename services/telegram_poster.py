@@ -168,8 +168,8 @@ class TelegramPosterService:
         photo=None,
         raise_errors: bool = False,
     ) -> int | None:
-        # Only an explicit product file_id is eligible. Private IMEI URLs are
-        # record evidence, never a fallback image for another audience.
+        # The worker passes the stored phone (or IMEI) photo for this internal
+        # staff group; a raw Drive URL is never sent for Telegram to fetch.
         photo = photo or sale_data.get("phone_photo_file_id")
         return await self._send(
             bot,

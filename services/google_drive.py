@@ -168,6 +168,23 @@ class GoogleDriveService:
             logger.warning("Google Drive folder read failed (%s)", type(exc).__name__)
             return False
 
+    def download_photo(self, file_id: str, *, max_bytes: int = 10_000_000) -> bytes:
+        """Bytes of a stored photo; private files work because the bot owns them."""
+        if not self.service:
+            raise DriveUnavailable("Google Drive rasm o'qish uchun tayyor emas")
+        try:
+            content = (
+                self.service.files()
+                .get_media(fileId=file_id, supportsAllDrives=True)
+                .execute()
+            )
+        except Exception as exc:
+            logger.warning("Google Drive download failed (%s)", type(exc).__name__)
+            raise DriveUnavailable("Rasmni Google Drive'dan olib bo'lmadi") from exc
+        if not content or len(content) > max_bytes:
+            raise DriveUnavailable("Rasm bo'sh yoki Telegram uchun juda katta")
+        return content
+
     def upload_photo(
         self, local_path: str, file_name: str, *, public: bool = False
     ) -> tuple[str, str, str]:

@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid5
 
+from aiogram.types import BufferedInputFile
+
 from services.telegram_poster import NotificationDeliveryError, TelegramPosterService
 
 logger = logging.getLogger(__name__)
@@ -44,12 +46,14 @@ class NotificationWorker:
         *,
         poll_interval: float = 1.0,
         max_attempts: int = 3,
+        drive_service=None,
     ):
         self.io_worker = io_worker
         self.sheets_service = sheets_service
         self.bots_by_id = bots_by_id
         self.poll_interval = max(0.1, poll_interval)
         self.max_attempts = max_attempts
+        self.drive_service = drive_service
         self.poster = TelegramPosterService()
         self.poster.configure(io_worker, sheets_service, bots_by_id=bots_by_id)
         self._next_attempt: dict[tuple[str, int], float] = {}
@@ -174,6 +178,28 @@ class NotificationWorker:
                 f"Channel delivery requires reconciliation; {acknowledgement}; {type(exc).__name__}",
             ) from exc
 
+    async def _stored_photo(self, phone_id: str):
+        """The purchase photo from Drive as an upload; None keeps the text-only post.
+
+        A Telegram file_id belongs to the bot that received it, so the sales bot
+        cannot reuse the purchase bot's ids; it sends the stored bytes instead.
+        """
+        if self.drive_service is None:
+            return None
+        try:
+            drive_id = await self.io_worker.call(
+                self.sheets_service.phone_photo_drive_id, phone_id
+            )
+            if not drive_id:
+                return None
+            content = await self.io_worker.call(
+                self.drive_service.download_photo, drive_id
+            )
+        except Exception as exc:
+            logger.warning("Sotuv rasmi olinmadi (%s); matn yuboriladi", type(exc).__name__)
+            return None
+        return BufferedInputFile(content, filename="telefon.jpg")
+
     async def _deliver(self, row: dict[str, Any]):
         payload = row["payload"]
         try:
@@ -198,6 +224,8 @@ class NotificationWorker:
                 bot, data, photo, raise_errors=True
             )
         if kind == "sell_group":
+            if not photo and payload.get("phone_id"):
+                photo = await self._stored_photo(str(payload["phone_id"]))
             return await self.poster.post_to_sell_group(
                 bot, data, photo=photo, raise_errors=True
             )
@@ -256,9 +284,13 @@ class NotificationWorker:
             else:
                 # If this persistence fails, sending remains durable. Restart
                 # quarantines it; repeating Telegram here would risk duplicates.
+                # Group posts return their Telegram message id; keeping it lets a
+                # wrong post be deleted or corrected later.
                 reason = (
                     acknowledged.reason
                     if isinstance(acknowledged, DeliveryAcknowledgement)
+                    else f"message_id={acknowledged}"
+                    if isinstance(acknowledged, int) and not isinstance(acknowledged, bool)
                     else ""
                 )
                 await self._mark(row, "sent", reason)

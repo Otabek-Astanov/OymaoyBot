@@ -469,7 +469,9 @@ async def confirm_sale_handler(message: types.Message, state: FSMContext, bot: B
     identifier = await operation_id(state)
     notifications = []
     if config.GROUP_SOTUV_ID:
-        notifications.append({"kind": "sell_group", "bot_id": bot.id, "data": data})
+        notifications.append(
+            {"kind": "sell_group", "bot_id": bot.id, "phone_id": reference, "data": data}
+        )
     post_id = data.get("channel_post_id")
     has_post = bool(post_id and str(post_id).isdigit())
     channel_index = None
