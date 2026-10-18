@@ -17,6 +17,10 @@ class StorageWriteError(ServiceError):
     pass
 
 
+class PhotoUploadError(StorageWriteError):
+    """The photo did not reach Google Drive; nothing of the step was saved."""
+
+
 class SchemaError(StorageReadError):
     pass
 

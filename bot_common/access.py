@@ -81,7 +81,8 @@ class AccessMiddleware(BaseMiddleware):
             # check_member already applied its own fallbacks; anything left is closed.
             logger.warning("Access check unavailable: %s", type(exc).__name__)
             await message.answer(
-                "⚠️ Ruxsat ma’lumotini tekshirib bo‘lmadi. Amal bajarilmadi."
+                "⚠️ Google bilan aloqa sekin, ruxsatni tekshirib bo'lmadi. "
+                "Hech narsa bajarilmadi — bir necha soniyadan keyin qayta bosing."
             )
             return None
         roles = (

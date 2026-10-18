@@ -15,6 +15,7 @@ from services.errors import (
     AmbiguousPhone,
     BusinessRuleError,
     OutcomeUnknown,
+    PhotoUploadError,
     ServiceError,
     StorageWriteError,
 )
@@ -133,10 +134,21 @@ def safe_handler(function):
             )
         except BusinessRuleError as exc:
             await message.answer(f"⚠️ {safe_html(exc)}")
+        except PhotoUploadError:
+            logger.warning("Handler operational failure: PhotoUploadError")
+            await message.answer(
+                "⚠️ <b>Rasm Google Drive'ga yuklanmadi</b> — Google bilan aloqa sekin.\n"
+                "Hech narsa saqlanmadi. Kiritganlaringiz esda: oxirgi javobingizni "
+                "(masalan, narxni) qayta yuboring."
+            )
         except (ServiceError, WorkerBusyError) as exc:
+            # Nothing was written: reads failed, or the write was refused before
+            # it applied. An uncertain write is OutcomeUnknown, handled above.
             logger.warning("Handler operational failure: %s", type(exc).__name__)
             await message.answer(
-                "⚠️ Ma’lumot saqlanishi tasdiqlanmadi. Kiritilgan ma’lumot saqlab qolindi."
+                "⚠️ <b>Google Sheets bilan aloqa bo'lmadi.</b>\n"
+                "Hech narsa saqlanmadi. Kiritganlaringiz esda: oxirgi javobingizni "
+                "bir necha soniyadan keyin qayta yuboring."
             )
         except asyncio.TimeoutError:
             identifier = (

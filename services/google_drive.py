@@ -16,6 +16,10 @@ import config
 
 logger = logging.getLogger(__name__)
 SCOPES = ["https://www.googleapis.com/auth/drive"]
+# Some new connections to Google stall for 20+ s from the server while a fresh
+# one succeeds at once; give up early and retry (3 attempts fit the IO timeout).
+DRIVE_ATTEMPT_SECONDS = 12
+DRIVE_RETRIES = 2
 _FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 
 
@@ -46,7 +50,9 @@ class GoogleDriveService:
     def _init_service(self) -> None:
         self.service = None
         try:
-            http = Http(timeout=min(30, max(1, config.IO_TIMEOUT_SECONDS)))
+            # A stalled Google connection is retried on a new one instead of
+            # waiting it out; attempts stay inside the IO worker timeout.
+            http = Http(timeout=DRIVE_ATTEMPT_SECONDS)
             if self.token_file.exists():
                 credentials = UserCredentials.from_authorized_user_file(
                     str(self.token_file), SCOPES
@@ -126,7 +132,7 @@ class GoogleDriveService:
             }
             if page_token:
                 arguments["pageToken"] = page_token
-            result = self.service.permissions().list(**arguments).execute()
+            result = self.service.permissions().list(**arguments).execute(num_retries=DRIVE_RETRIES)
             if not isinstance(result, dict) or not isinstance(
                 result.get("permissions"), list
             ):
@@ -156,7 +162,7 @@ class GoogleDriveService:
                     fields="id,mimeType,trashed",
                     supportsAllDrives=True,
                 )
-                .execute()
+                .execute(num_retries=DRIVE_RETRIES)
             )
             if folder.get("mimeType") != _FOLDER_MIME_TYPE or folder.get(
                 "trashed", False
@@ -176,7 +182,7 @@ class GoogleDriveService:
             content = (
                 self.service.files()
                 .get_media(fileId=file_id, supportsAllDrives=True)
-                .execute()
+                .execute(num_retries=DRIVE_RETRIES)
             )
         except Exception as exc:
             logger.warning("Google Drive download failed (%s)", type(exc).__name__)
@@ -201,7 +207,7 @@ class GoogleDriveService:
         try:
             if not public:
                 self._assert_private_access(config.DRIVE_FOLDER_ID)
-            media = MediaFileUpload(local_path, mimetype="image/jpeg", resumable=True)
+            media = MediaFileUpload(local_path, mimetype="image/jpeg", resumable=False)
             uploaded = (
                 self.service.files()
                 .create(
@@ -210,7 +216,7 @@ class GoogleDriveService:
                     fields="id,webViewLink",
                     supportsAllDrives=True,
                 )
-                .execute()
+                .execute(num_retries=DRIVE_RETRIES)
             )
             file_id = uploaded.get("id")
             if not file_id:
@@ -223,7 +229,7 @@ class GoogleDriveService:
                     fileId=file_id,
                     body={"type": "anyone", "role": "reader"},
                     supportsAllDrives=True,
-                ).execute()
+                ).execute(num_retries=DRIVE_RETRIES)
             view_link = (
                 uploaded.get("webViewLink")
                 or f"https://drive.google.com/file/d/{file_id}/view"

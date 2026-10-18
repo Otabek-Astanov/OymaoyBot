@@ -1,5 +1,5 @@
 from bot_common.handler_support import begin_flow
-from services.errors import AmbiguousPhone, StorageWriteError
+from services.errors import AmbiguousPhone, PhotoUploadError
 from services.google_drive import DriveUnavailable
 from bot_common.handler_support import (
     clean_currency,
@@ -817,7 +817,7 @@ async def store_photo(bot, state, file_key, link_key, *, public):
                 public=public,
             )
         except DriveUnavailable as exc:
-            raise StorageWriteError("Rasmni arxivlash tasdiqlanmadi") from exc
+            raise PhotoUploadError("Rasmni arxivlash tasdiqlanmadi") from exc
         await state.update_data(**{link_key: link, link_key + "_uploaded": True})
         return link
     finally:

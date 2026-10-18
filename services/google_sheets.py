@@ -88,7 +88,9 @@ class GoogleSheetsService:
                 if session is not None:
                     session.mount("https://", adapter)
                     session.mount("http://", adapter)
-                self.client.set_timeout(config.IO_TIMEOUT_SECONDS)
+                # Fail a stalled connect fast so the adapter retries on a new
+                # connection; a sent request (e.g. batchUpdate) is never resent.
+                self.client.set_timeout((5, min(30, config.IO_TIMEOUT_SECONDS)))
                 self.spreadsheet = self.client.open_by_key(config.SPREADSHEET_ID)
             except Exception as exc:
                 self.spreadsheet = None
