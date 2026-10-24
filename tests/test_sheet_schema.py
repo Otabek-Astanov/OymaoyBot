@@ -151,3 +151,16 @@ def test_inserting_a_column_before_phone_ids_keeps_existing_ids(storage):
             "columnIndex": config.DEFAULT_HEADERS["Telefonlar"].index("Telefon ID"),
         }
     ]
+
+
+def test_inserted_columns_do_not_inherit_neighbour_formatting(storage):
+    from scripts.manage_data import schema_proposal
+
+    service, sheet = storage
+    ws = sheet.sheets["Telefonlar"]
+    column = ws.values[0].index("Telefon ID")
+    for row in ws.values:
+        row.pop(column)
+    proposal = schema_proposal(service)
+    inserts = [r["insertDimension"] for r in proposal["batch"]["requests"] if "insertDimension" in r]
+    assert inserts and all(i["inheritFromBefore"] is False for i in inserts)

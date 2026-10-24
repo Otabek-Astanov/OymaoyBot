@@ -149,7 +149,9 @@ def schema_proposal(service, *, bootstrap=False):
                                 "startIndex": column,
                                 "endIndex": column + 1,
                             },
-                            "inheritFromBefore": column > 0,
+                            # Never copy a neighbour's dropdown or colors: inheriting
+                            # gave Telefon ID the Holati list on the live sheet.
+                            "inheritFromBefore": False,
                         }
                     }
                 )
