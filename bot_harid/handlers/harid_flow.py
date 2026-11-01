@@ -860,7 +860,9 @@ async def queue_listing(message, state, bot):
         text = "🕓 E'lon saqlandi va navbatga qo'yildi. Bir necha daqiqada kanalda chiqadi."
     elif status["state"] == "sent":
         text = (
-            "✅ <b>Kanaldagi e'lon yangilandi.</b>"
+            "✅ <b>Eski e'lon kanaldan o'chirilgan ekan — yangi e'lon joylandi.</b>"
+            if "replaced deleted post" in str(status.get("error", ""))
+            else "✅ <b>Kanaldagi e'lon yangilandi.</b>"
             if had_post
             else "✅ <b>E'lon kanalga joylandi.</b>"
         )

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4, uuid5
 
 import pytest
-from aiogram.exceptions import TelegramRetryAfter
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.methods import SendMessage
 
 from services.telegram_poster import TelegramPosterService
@@ -52,6 +52,10 @@ def fake_bot():
         edit_message_text=AsyncMock(return_value=True),
         edit_message_media=AsyncMock(return_value=True),
     )
+
+
+def bad_request(message):
+    return TelegramBadRequest(method=SendMessage(chat_id=1, text="x"), message=message)
 
 
 PHONE_ID = "3234fb8b-0d11-4f25-a2f0-5384cbe5ab89"
@@ -396,6 +400,56 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         bot.send_message.assert_not_called()
         self.assertEqual(bot.edit_message_caption.call_args.kwargs["message_id"], 77)
         self.assertEqual(outbox.recorded_posts[0][1], 77)
+
+    async def test_post_deleted_in_channel_is_replaced_by_a_new_tracked_post(self):
+        outbox = ListingOutbox(post_id=77)
+        bot = fake_bot()
+        bot.edit_message_caption.side_effect = bad_request(
+            "Bad Request: message to edit not found"
+        )
+        bot.edit_message_text.side_effect = bad_request(
+            "Bad Request: message to edit not found"
+        )
+        worker = self.worker_class()(FakeIOWorker(), outbox, {123: bot})
+        with patch("config.CHANNEL_ID", "-123"):
+            await worker.process_once()
+        self.assertEqual(outbox.status, "sent")
+        self.assertEqual(bot.send_message.await_count, 1)
+        self.assertEqual(outbox.recorded_posts[0][1], 99)
+        self.assertIn("replaced deleted post 77", outbox.error)
+
+    async def test_other_edit_refusal_never_creates_a_second_post(self):
+        outbox = ListingOutbox(post_id=77)
+        bot = fake_bot()
+        bot.edit_message_caption.side_effect = bad_request(
+            "Bad Request: message can't be edited"
+        )
+        bot.edit_message_text.side_effect = bad_request(
+            "Bad Request: message can't be edited"
+        )
+        worker = self.worker_class()(FakeIOWorker(), outbox, {123: bot})
+        with patch("config.CHANNEL_ID", "-123"):
+            await worker.process_once()
+        self.assertEqual(outbox.status, "unknown")
+        self.assertIn("message can't be edited", outbox.error)
+        bot.send_message.assert_not_called()
+        self.assertEqual(outbox.recorded_posts, [])
+
+    async def test_sold_mark_on_deleted_post_is_skipped_not_quarantined(self):
+        outbox = ListingOutbox(status="Sotildi", post_id=88, kind="sold_channel")
+        bot = fake_bot()
+        bot.edit_message_caption.side_effect = bad_request(
+            "Bad Request: message to edit not found"
+        )
+        bot.edit_message_text.side_effect = bad_request(
+            "Bad Request: message to edit not found"
+        )
+        worker = self.worker_class()(FakeIOWorker(), outbox, {123: bot})
+        with patch("config.CHANNEL_ID", "-123"):
+            await worker.process_once()
+        self.assertEqual(outbox.status, "sent")
+        self.assertIn("post 88 was deleted", outbox.error)
+        bot.send_message.assert_not_called()
 
     async def test_sale_notification_resolves_fresh_channel_post_id(self):
         outbox = ListingOutbox(status="Sotildi", post_id=88, kind="sold_channel")

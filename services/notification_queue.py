@@ -14,7 +14,11 @@ from uuid import UUID, uuid5
 
 from aiogram.types import BufferedInputFile
 
-from services.telegram_poster import NotificationDeliveryError, TelegramPosterService
+from services.telegram_poster import (
+    ChannelPostMissing,
+    NotificationDeliveryError,
+    TelegramPosterService,
+)
 
 logger = logging.getLogger(__name__)
 _running_workers = 0
@@ -128,10 +132,22 @@ class NotificationWorker:
                 "Channel publication requires current user access"
             ) from exc
         existing_post_id = self._post_id(phone.get("Kanal post ID"))
+        replaced = ""
         if existing_post_id:
-            post_id = await self.poster.edit_channel_post(
-                bot, existing_post_id, data, photo, raise_errors=True
-            )
+            try:
+                post_id = await self.poster.edit_channel_post(
+                    bot, existing_post_id, data, photo, raise_errors=True
+                )
+            except ChannelPostMissing:
+                # Telegram definitively edited nothing: the post was deleted in
+                # the channel, so a new post cannot duplicate a visible one.
+                logger.info(
+                    "Channel post %s was deleted; posting anew", existing_post_id
+                )
+                post_id = await self.poster.post_to_channel(
+                    bot, data, photo, raise_errors=True
+                )
+                replaced = f"; replaced deleted post {existing_post_id}"
         else:
             post_id = await self.poster.post_to_channel(
                 bot, data, photo, raise_errors=True
@@ -142,7 +158,7 @@ class NotificationWorker:
             )
         # From this point, even a retryable storage/template error must NEVER
         # repeat publication. The operator can reconcile using this safe ID.
-        acknowledgement = f"post_id={post_id}"
+        acknowledgement = f"post_id={post_id}{replaced}"
         try:
             recorded = await self.io_worker.call(
                 self.sheets_service.record_channel_post,
@@ -241,9 +257,14 @@ class NotificationWorker:
                     return DeliveryAcknowledgement(
                         "Sold channel edit skipped: no tracked listing"
                     )
-            return await self.poster.mark_as_sold_on_channel(
-                bot, int(post_id), data, raise_errors=True
-            )
+            try:
+                return await self.poster.mark_as_sold_on_channel(
+                    bot, int(post_id), data, raise_errors=True
+                )
+            except ChannelPostMissing:
+                return DeliveryAcknowledgement(
+                    f"Sold channel edit skipped: post {post_id} was deleted"
+                )
         raise NotificationDeliveryError("Unknown notification kind")
 
     async def process_once(self) -> int:

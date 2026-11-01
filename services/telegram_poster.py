@@ -27,6 +27,13 @@ class NotificationDeliveryError(RuntimeError):
         self.retry_after = retry_after
 
 
+class ChannelPostMissing(NotificationDeliveryError):
+    """Telegram says the tracked post no longer exists (deleted in the channel)."""
+
+
+POST_GONE = "message to edit not found"
+
+
 class TelegramPosterService:
     def __init__(self):
         self._io_worker = None
@@ -74,7 +81,10 @@ class TelegramPosterService:
 
     @staticmethod
     def _failure(exc: Exception, *, raise_errors: bool):
-        logger.warning("Telegram delivery failed (%s)", type(exc).__name__)
+        # Telegram's own description (never a URL or token) says why it refused.
+        detail = exc.message if isinstance(exc, TelegramBadRequest) else ""
+        name = f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+        logger.warning("Telegram delivery failed (%s)", name)
         if raise_errors:
             if isinstance(exc, NotificationDeliveryError):
                 raise exc
@@ -85,7 +95,7 @@ class TelegramPosterService:
                     retryable=True,
                     retry_after=exc.retry_after,
                 ) from exc
-            raise NotificationDeliveryError(type(exc).__name__) from exc
+            raise NotificationDeliveryError(name) from exc
         return None
 
     async def _send(
@@ -195,6 +205,9 @@ class TelegramPosterService:
         caption_text, caption_mode = prepare_telegram_text(caption, 1024)
         message_text, message_mode = prepare_telegram_text(caption, 4096)
         last_error = None
+        # Deleted only when every refusal says the post is gone; any other
+        # refusal (e.g. another bot's post) keeps the normal error path.
+        gone = True
         for candidate in self._channel_bots(bot):
             try:
                 if photo:
@@ -223,6 +236,7 @@ class TelegramPosterService:
                 if "message is not modified" in exc.message.lower():
                     return post_id
                 last_error = exc
+                gone = gone and POST_GONE in exc.message.lower()
                 if photo:
                     continue
             # Only a definitive caption rejection permits trying a text edit.
@@ -243,6 +257,11 @@ class TelegramPosterService:
                 if "message is not modified" in exc.message.lower():
                     return post_id
                 last_error = exc
+                gone = gone and POST_GONE in exc.message.lower()
+        if last_error is not None and gone:
+            raise ChannelPostMissing(
+                f"Channel post {post_id} was deleted"
+            ) from last_error
         raise last_error or NotificationDeliveryError(
             "Channel post could not be edited"
         )
